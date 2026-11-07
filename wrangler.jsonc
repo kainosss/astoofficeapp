@@ -1,0 +1,58 @@
+{
+  // ASTO Office — Cloudflare Worker configuration.
+  // The top-level configuration is for LOCAL DEVELOPMENT ONLY.
+  // Production settings live under "env.production" and are used with `wrangler deploy --env production`.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "asto-office-dev",
+  "main": "src/worker/index.ts",
+  "compatibility_date": "2026-08-01",
+  "assets": {
+    "directory": "dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"]
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "asto-office-db",
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "development",
+    // Development-only bypass. Refused at runtime whenever ENVIRONMENT is "production".
+    "AUTH_MODE": "dev-bypass",
+    "DEV_USER_EMAIL": "dev@localhost",
+    "ACCESS_TEAM_DOMAIN": "",
+    "ACCESS_AUD": "",
+    "ADMIN_EMAILS": ""
+  },
+  "env": {
+    "production": {
+      "name": "asto-office",
+      "routes": [{ "pattern": "office.astosec.com", "custom_domain": true }],
+      "d1_databases": [
+        {
+          "binding": "DB",
+          "database_name": "asto-office-db-prod",
+          // Replace with the real database id after `wrangler d1 create asto-office-db-prod` (requires approval).
+          "database_id": "REPLACE_WITH_PRODUCTION_D1_ID",
+          "migrations_dir": "migrations"
+        }
+      ],
+      "vars": {
+        "ENVIRONMENT": "production",
+        "AUTH_MODE": "access",
+        "DEV_USER_EMAIL": "",
+        // e.g. "https://<your-team>.cloudflareaccess.com"
+        "ACCESS_TEAM_DOMAIN": "REPLACE_WITH_ACCESS_TEAM_DOMAIN",
+        // The Application Audience (AUD) tag from the Cloudflare Access application.
+        "ACCESS_AUD": "REPLACE_WITH_ACCESS_AUD_TAG",
+        // Comma-separated list of administrator emails allowed to use the app.
+        "ADMIN_EMAILS": "REPLACE_WITH_ADMIN_EMAIL"
+      }
+    }
+  }
+}
