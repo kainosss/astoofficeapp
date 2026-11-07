@@ -1,0 +1,44 @@
+{
+  "name": "asto-office",
+  "private": true,
+  "version": "0.1.0",
+  "description": "ASTO Office — private business management and quotation application for ASTO SECURITY",
+  "type": "module",
+  "scripts": {
+    "dev": "npm run build:client && wrangler dev --port 8787",
+    "dev:ui": "vite",
+    "build": "npm run typecheck && vite build",
+    "build:client": "vite build",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate:local": "wrangler d1 migrations apply asto-office-db --local",
+    "db:seed:local": "tsx scripts/gen-seed.ts > .wrangler/seed.sql && wrangler d1 execute asto-office-db --local --file .wrangler/seed.sql",
+    "db:reset:local": "rm -rf .wrangler/state && npm run db:migrate:local && npm run db:seed:local",
+    "backup:local": "bash scripts/backup-local.sh"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.9.1",
+    "drizzle-orm": "^0.45.4",
+    "hono": "^4.13.17",
+    "jose": "^6.2.15",
+    "pdf-lib": "^1.17.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "react-router-dom": "^7.18.5",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-plugin": "^1.6.0",
+    "@cloudflare/workers-types": "^5.20261107.1",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "drizzle-kit": "^0.31.11",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.6",
+    "vitest": "^4.1.12",
+    "wrangler": "^4.158.0"
+  }
+}
