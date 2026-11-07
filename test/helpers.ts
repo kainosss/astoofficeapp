@@ -24,7 +24,7 @@ export async function api<T = any>(path: string, init: RequestInit & { json?: un
 
 async function inflate(bytes: Uint8Array): Promise<string> {
   try {
-    const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("deflate"));
+    const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new DecompressionStream("deflate"));
     return new TextDecoder("latin1").decode(await new Response(stream).arrayBuffer());
   } catch {
     return "";
