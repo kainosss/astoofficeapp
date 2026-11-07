@@ -10,7 +10,7 @@ Nothing in this guide touches the public `astosec.com` website, existing DNS rec
 | Worker | `asto-office` (`wrangler deploy --env production`) |
 | Hostname | `office.astosec.com` only (Workers Custom Domain) |
 | `*.workers.dev` / preview URLs | **Disabled** (`workers_dev: false`, `preview_urls: false`) — they would not be behind Access |
-| Database | D1 `asto-office-db-prod`, location hint `oc` (Oceania), created empty; schema from `migrations/` |
+| Database | D1 `asto-office-prod`, location hint `oc` (Oceania), created empty; schema from `migrations/` |
 | Auth | Cloudflare Access (one-time PIN to your email) **and** in-Worker JWT verification + admin allowlist |
 | Config | `ENVIRONMENT=production`, `AUTH_MODE=access` (committed); `ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `ADMIN_EMAILS` as **encrypted secrets** (not in git) |
 | Logs | Workers Logs enabled (errors only are logged; no customer data is logged deliberately) |
@@ -58,15 +58,15 @@ Check Cloudflare's current pricing pages before approving; figures above are as 
 
 ### B. Create and deploy (each step needs your explicit approval)
 
-8. **C — Create the database:** `npx wrangler d1 create asto-office-db-prod --location=oc`. Put the returned `database_id` into `wrangler.jsonc` → `env.production.d1_databases[0].database_id`, and commit.
+8. **C — Create the database:** `npx wrangler d1 create asto-office-prod --location=oc`. Put the returned `database_id` into `wrangler.jsonc` → `env.production.d1_databases[0].database_id`, and commit.
 9. **C — Apply the schema (empty database):** `npm run db:migrate:prod`. Verify it is empty:
-   `npx wrangler d1 execute asto-office-db-prod --env production --remote --command "SELECT (SELECT COUNT(*) FROM customers) AS customers, (SELECT COUNT(*) FROM quotes) AS quotes"` → both `0`.
+   `npx wrangler d1 execute asto-office-prod --env production --remote --command "SELECT (SELECT COUNT(*) FROM customers) AS customers, (SELECT COUNT(*) FROM quotes) AS quotes"` → both `0`.
 10. **C — Deploy:** `npm run deploy` (config check → tests → build → `wrangler deploy --env production`).
     ⚠️ This attaches the Custom Domain `office.astosec.com`, which **creates one DNS record (`office`) in the `astosec.com` zone**. No other record is touched. Requires your DNS approval.
     Until step 11 the API returns HTTP 500 (fails closed); Access already blocks the hostname.
 11. **C — Set secrets** (values from step 6):
     `npx wrangler secret put ACCESS_TEAM_DOMAIN --env production`
-    `npx wrangler secret put ACCESS_AUD --env production`
+    `npx wrangler secret put ACCESS_AUD --env production` (one AUD tag, or several comma-separated — e.g. the custom-domain application plus the application Cloudflare creates if you ever enable Access on workers.dev/preview URLs)
     `npx wrangler secret put ADMIN_EMAILS --env production`
 
 ### C. Verify (no further changes)
@@ -81,6 +81,6 @@ Check Cloudflare's current pricing pages before approving; figures above are as 
 
 - **In-app:** Settings → Full backup (JSON) and CSV exports. Store privately (contains customer data and supplier pricing).
 - **Database dump:** `npm run backup:prod` (writes `backups/asto-office-prod-<timestamp>.sql`, git-ignored).
-- **Point-in-time restore:** `npx wrangler d1 time-travel info asto-office-db-prod --env production` / `... time-travel restore ...` (7 days Free, 30 days Paid).
+- **Point-in-time restore:** `npx wrangler d1 time-travel info asto-office-prod --env production` / `... time-travel restore ...` (7 days Free, 30 days Paid).
 - **Schema changes later:** `npm run db:generate` → review SQL → `npm run db:migrate:prod` → `npm run deploy`.
 - **Rotate access:** edit the Access policy email and `ADMIN_EMAILS` together.

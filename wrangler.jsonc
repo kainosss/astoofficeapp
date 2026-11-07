@@ -36,8 +36,8 @@
       "d1_databases": [
         {
           "binding": "DB",
-          "database_name": "asto-office-db-prod",
-          // Replace with the real id from `wrangler d1 create asto-office-db-prod --location=oc` (requires approval).
+          "database_name": "asto-office-prod",
+          // Replace with the real id from `wrangler d1 create asto-office-prod --location=oc` (requires approval).
           "database_id": "REPLACE_WITH_PRODUCTION_D1_ID",
           "migrations_dir": "migrations"
         }

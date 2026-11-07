@@ -47,6 +47,12 @@ describe("Cloudflare Access JWT verification", () => {
     const user = await verifyAccessJwt(await token({ email: "second@example.com" }), accessEnv(), jwks);
     expect(user.email).toBe("second@example.com");
   });
+  it("accepts any configured audience when several are listed, and nothing else", async () => {
+    const multi = accessEnv({ ACCESS_AUD: "workers-dev-app-aud, " + AUD });
+    expect((await verifyAccessJwt(await token(), multi, jwks)).email).toBe("owner@astosec.example");
+    expect((await verifyAccessJwt(await token({}, { aud: "workers-dev-app-aud" }), multi, jwks)).email).toBe("owner@astosec.example");
+    await expectAuthError(verifyAccessJwt(await token({}, { aud: "unrelated-app" }), multi, jwks), 401);
+  });
   it("rejects the wrong audience", async () => {
     await expectAuthError(verifyAccessJwt(await token({}, { aud: "other-app" }), accessEnv(), jwks), 401);
   });

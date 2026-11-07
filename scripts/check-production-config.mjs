@@ -28,7 +28,7 @@ check(!prod.vars?.DEV_USER_EMAIL, "DEV_USER_EMAIL must be empty in production");
 for (const k of ["ACCESS_TEAM_DOMAIN", "ACCESS_AUD", "ADMIN_EMAILS"])
   check(!(k in (prod.vars ?? {})), `${k} must be a secret (wrangler secret put ${k} --env production), not a plain var`);
 const db = prod.d1_databases?.[0];
-check(db?.database_name === "asto-office-db-prod", "production D1 database must be asto-office-db-prod");
+check(db?.database_name === "asto-office-prod", "production D1 database must be asto-office-prod");
 check(db?.database_id && /^[0-9a-f-]{36}$/.test(db.database_id) && !/^0{8}-/.test(db.database_id), "production D1 database_id is not set (run wrangler d1 create first)");
 const routes = prod.routes ?? [];
 check(routes.length === 1 && routes[0].pattern === "office.astosec.com" && routes[0].custom_domain === true, "production must route only the custom domain office.astosec.com");

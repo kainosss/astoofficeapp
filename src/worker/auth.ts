@@ -34,6 +34,12 @@ function isPlaceholder(v: string | undefined): boolean {
   return !v || v.startsWith("REPLACE_WITH");
 }
 
+/** ACCESS_AUD may list several AUD tags (comma-separated), e.g. the custom-domain Access application
+ * plus the Access application Cloudflare creates for workers.dev / preview URLs. */
+export function accessAudiences(env: Env): string[] {
+  return (env.ACCESS_AUD || "").split(",").map((a) => a.trim()).filter(Boolean);
+}
+
 function readToken(req: Request): string | null {
   const header = req.headers.get("cf-access-jwt-assertion");
   if (header) return header;
@@ -49,7 +55,7 @@ export async function verifyAccessJwt(token: string, env: Env, getKey: JWTVerify
   try {
     ({ payload } = await jwtVerify(token, getKey, {
       issuer,
-      audience: env.ACCESS_AUD,
+      audience: accessAudiences(env),
       algorithms: ["RS256"],
       clockTolerance: 30,
       requiredClaims: ["exp", "iat", "email"],
@@ -74,7 +80,7 @@ export async function authenticate(req: Request, env: Env): Promise<AuthUser> {
   }
 
   if (env.AUTH_MODE !== "access") throw new AuthError(500, "Authentication is not configured.");
-  if (isPlaceholder(env.ACCESS_TEAM_DOMAIN) || isPlaceholder(env.ACCESS_AUD) || adminAllowlist(env).length === 0 || (env.ADMIN_EMAILS ?? "").includes("REPLACE_WITH"))
+  if (isPlaceholder(env.ACCESS_TEAM_DOMAIN) || accessAudiences(env).length === 0 || accessAudiences(env).some(isPlaceholder) || adminAllowlist(env).length === 0 || (env.ADMIN_EMAILS ?? "").includes("REPLACE_WITH"))
     throw new AuthError(500, "Cloudflare Access is not fully configured (team domain, audience and admin emails are required).");
 
   const token = readToken(req);
