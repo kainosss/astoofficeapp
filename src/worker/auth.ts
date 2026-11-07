@@ -74,7 +74,7 @@ export async function authenticate(req: Request, env: Env): Promise<AuthUser> {
   }
 
   if (env.AUTH_MODE !== "access") throw new AuthError(500, "Authentication is not configured.");
-  if (isPlaceholder(env.ACCESS_TEAM_DOMAIN) || isPlaceholder(env.ACCESS_AUD) || adminAllowlist(env).length === 0 || env.ADMIN_EMAILS.includes("REPLACE_WITH"))
+  if (isPlaceholder(env.ACCESS_TEAM_DOMAIN) || isPlaceholder(env.ACCESS_AUD) || adminAllowlist(env).length === 0 || (env.ADMIN_EMAILS ?? "").includes("REPLACE_WITH"))
     throw new AuthError(500, "Cloudflare Access is not fully configured (team domain, audience and admin emails are required).");
 
   const token = readToken(req);
