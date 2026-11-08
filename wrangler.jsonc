@@ -37,8 +37,8 @@
         {
           "binding": "DB",
           "database_name": "asto-office-prod",
-          // Replace with the real id from `wrangler d1 create asto-office-prod --location=oc` (requires approval).
-          "database_id": "REPLACE_WITH_PRODUCTION_D1_ID",
+          // Production D1 database (created in the Cloudflare dashboard). The id is not a secret.
+          "database_id": "9e96a063-3158-4a18-8d57-4117d72dac0a",
           "migrations_dir": "migrations"
         }
       ],

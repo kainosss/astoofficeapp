@@ -7,3 +7,4 @@ dist/
 backups/
 coverage/
 .DS_Store
+.secrets/
