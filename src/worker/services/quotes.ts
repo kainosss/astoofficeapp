@@ -4,6 +4,7 @@ import {
   addDays, calculateRevision, formatQuoteNumber, itemsFromPackage, pricingFrom, quoteReference, splitLines, todayBrisbane,
 } from "../../shared/quoteBuilder";
 import { centiToInput } from "../../shared/money";
+import { CURRENT_DOCUMENT_FORMAT, type DocumentFormat } from "../../shared/terms";
 import type {
   Customer, CustomerQuote, QuoteDetail, QuoteItem, QuoteListRow, QuoteRevision, QuoteStatus, RevisionPricing, Settings, Site,
 } from "../../shared/types";
@@ -23,6 +24,8 @@ export interface Snapshot {
   customer: CustomerQuote["customer"];
   site: CustomerQuote["site"];
   validityDays: number;
+  /** Set when issued. Absent on revisions issued before the separate Warranty Statement existed (= format 1). */
+  documentFormat?: DocumentFormat;
 }
 
 function toItem(r: ItemRow): QuoteItem {
@@ -83,6 +86,7 @@ export function buildSnapshot(settings: Settings, customer: Customer, site: Site
     customer: { name: customer.name, contactPerson: customer.contactPerson, email: customer.email, phone: customer.phone },
     site: site ? { address: site.address, suburb: site.suburb, state: site.state, postcode: site.postcode } : null,
     validityDays: settings.quoteValidityDays,
+    documentFormat: CURRENT_DOCUMENT_FORMAT,
   };
 }
 
@@ -353,6 +357,8 @@ export async function getCustomerQuote(db: Db, quoteId: number, revisionId?: num
     expiryDate,
     isDraft: rev.status === "draft",
     status: rev.status,
+    // Issued revisions keep the document format they were issued with; drafts use the current format.
+    documentFormat: rev.locked && row?.snapshot ? ((row.snapshot as Snapshot).documentFormat ?? 1) : CURRENT_DOCUMENT_FORMAT,
     customer: { ...snapshot.customer },
     site: snapshot.site ? { ...snapshot.site } : null,
     packageName: rev.packageName,

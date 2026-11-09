@@ -30,6 +30,9 @@ export const api = {
   del: <T>(path: string) => request<T>("DELETE", path),
 };
 
-export function pdfUrl(quoteId: number, revisionId: number, download = false) {
-  return `/api/quotes/${quoteId}/revisions/${revisionId}/pdf${download ? "?download=1" : ""}`;
+export type DocKind = "quotation" | "warranty" | "both";
+const DOC_PATH: Record<DocKind, string> = { quotation: "pdf", warranty: "warranty-pdf", both: "documents-pdf" };
+
+export function pdfUrl(quoteId: number, revisionId: number, download = false, kind: DocKind = "quotation") {
+  return `/api/quotes/${quoteId}/revisions/${revisionId}/${DOC_PATH[kind]}${download ? "?download=1" : ""}`;
 }
