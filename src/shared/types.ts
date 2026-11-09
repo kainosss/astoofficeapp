@@ -231,6 +231,8 @@ export interface CustomerQuote {
   expiryDate: string;
   isDraft: boolean;
   status: QuoteStatus;
+  /** 2 = short warranty summary + separate Warranty Statement; 1 = legacy issued quotes with the full warranty inline. */
+  documentFormat: 1 | 2;
   customer: { name: string; contactPerson: string; email: string; phone: string };
   site: { address: string; suburb: string; state: string; postcode: string } | null;
   packageName: string;

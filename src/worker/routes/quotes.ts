@@ -1,6 +1,8 @@
 import { Hono } from "hono";
-import type { QuoteStatus } from "../../shared/types";
+import { PDFDocument } from "pdf-lib";
+import type { CustomerQuote, QuoteStatus } from "../../shared/types";
 import { renderQuotePdf } from "../pdf/quotePdf";
+import { renderWarrantyPdf } from "../pdf/warrantyPdf";
 import {
   createQuote, deleteQuote, duplicateQuote, getCustomerQuote, getQuoteDetail, initialContent, listQuotes, reviseQuote, saveRevision, setStatus,
 } from "../services/quotes";
@@ -61,10 +63,34 @@ export const quoteRoutes = new Hono<AppEnv>()
     c.json(await getCustomerQuote(c.var.db, parseId(c.req.param("id")), parseId(c.req.param("revisionId")))))
   .get("/:id/revisions/:revisionId/pdf", async (c) => {
     const cq = await getCustomerQuote(c.var.db, parseId(c.req.param("id")), parseId(c.req.param("revisionId")));
-    const bytes = await renderQuotePdf(cq);
-    const filename = `${cq.reference.replace(/\s+/g, "-")}${cq.isDraft ? "-DRAFT" : ""}.pdf`;
-    const disposition = c.req.query("download") === "1" ? "attachment" : "inline";
-    return new Response(bytes as unknown as BodyInit, {
-      headers: { "Content-Type": "application/pdf", "Content-Disposition": `${disposition}; filename="${filename}"`, "Cache-Control": "no-store" },
-    });
+    return pdfResponse(await renderQuotePdf(cq), docFilename(cq, "Quotation"), c.req.query("download") === "1");
+  })
+  /** The separate Warranty Statement that accompanies the quotation (same revision, same terms). */
+  .get("/:id/revisions/:revisionId/warranty-pdf", async (c) => {
+    const cq = await getCustomerQuote(c.var.db, parseId(c.req.param("id")), parseId(c.req.param("revisionId")));
+    return pdfResponse(await renderWarrantyPdf(cq), docFilename(cq, "Warranty-Statement"), c.req.query("download") === "1");
+  })
+  /** Quotation followed by its Warranty Statement in one file, for sending to the customer. */
+  .get("/:id/revisions/:revisionId/documents-pdf", async (c) => {
+    const cq = await getCustomerQuote(c.var.db, parseId(c.req.param("id")), parseId(c.req.param("revisionId")));
+    const combined = await PDFDocument.create();
+    combined.setTitle(`${cq.business.name} Quotation and Warranty Statement ${cq.reference}`);
+    combined.setAuthor(cq.business.name);
+    combined.setCreator("ASTO Office");
+    combined.setProducer("ASTO Office");
+    for (const bytes of [await renderQuotePdf(cq), await renderWarrantyPdf(cq)]) {
+      const part = await PDFDocument.load(bytes);
+      (await combined.copyPages(part, part.getPageIndices())).forEach((pg) => combined.addPage(pg));
+    }
+    return pdfResponse(await combined.save(), docFilename(cq, "Quotation-and-Warranty-Statement"), c.req.query("download") === "1");
   });
+
+function docFilename(cq: CustomerQuote, kind: string) {
+  return `${cq.reference.replace(/\s+/g, "-")}-${kind}${cq.isDraft ? "-DRAFT" : ""}.pdf`;
+}
+
+function pdfResponse(bytes: Uint8Array, filename: string, download: boolean) {
+  return new Response(bytes as unknown as BodyInit, {
+    headers: { "Content-Type": "application/pdf", "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${filename}"`, "Cache-Control": "no-store" },
+  });
+}

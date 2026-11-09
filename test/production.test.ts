@@ -29,6 +29,7 @@ const ROUTES: [string, string, unknown?][] = [
   ["PUT", "/api/quotes/1/revisions/1", {}], ["POST", "/api/quotes/1/revisions/1/status", { status: "accepted" }],
   ["POST", "/api/quotes/1/revise", {}], ["POST", "/api/quotes/1/duplicate", {}],
   ["GET", "/api/quotes/1/revisions/1/customer"], ["GET", "/api/quotes/1/revisions/1/pdf"],
+  ["GET", "/api/quotes/1/revisions/1/warranty-pdf"], ["GET", "/api/quotes/1/revisions/1/documents-pdf"],
   ["GET", "/api/dashboard"], ["GET", "/api/export/backup.json"], ["GET", "/api/export/customers.csv"],
   ["GET", "/api/export/quotes.csv"], ["GET", "/api/export/equipment.csv"], ["GET", "/api/does-not-exist"],
 ];

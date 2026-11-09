@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { centiToInput, formatAud } from "../../shared/money";
 import type { CustomerQuote, QuoteDetail, QuoteStatus } from "../../shared/types";
-import { api, pdfUrl } from "../api";
+import { api, pdfUrl, type DocKind } from "../api";
 import { formatDate, Icon, Loading, PageHeader, STATUS_LABEL, StatusBadge, useLoad, useToast } from "../components/ui";
-import { splitScopeTitle } from "../../shared/terms";
+import { acceptanceStatement, documentWarnings, splitScopeTitle, warrantySummary } from "../../shared/terms";
 import { SummaryPanel } from "./QuoteBuilder";
 
 type Tab = "preview" | "pdf" | "internal";
@@ -16,6 +16,7 @@ export function QuoteView() {
   const nav = useNavigate();
   const toast = useToast();
   const [tab, setTab] = useState<Tab>("preview");
+  const [pdfKind, setPdfKind] = useState<Exclude<DocKind, "both">>("quotation");
   const [busy, setBusy] = useState(false);
   const detail = useLoad(() => api.get<QuoteDetail>(`/quotes/${id}${revisionId ? `?revisionId=${revisionId}` : ""}`), [id, revisionId]);
   const rev = detail.data?.revision;
@@ -32,7 +33,11 @@ export function QuoteView() {
     try { await fn(); toast(message); await detail.reload(); } catch (e) { toast((e as Error).message, "error"); } finally { setBusy(false); }
   };
   const setStatus = (status: QuoteStatus) => {
-    if (status === "sent" && !window.confirm("Mark this quotation as sent?\n\nThis issues the quotation: the revision is locked and its prices, terms and business details are preserved exactly as issued. Further changes will need a new revision.")) return;
+    if (status === "sent") {
+      const missing = customer.data ? documentWarnings(customer.data) : [];
+      const warning = missing.length ? `\n\nWARNING — required information is missing from the quotation or Warranty Statement:\n• ${missing.join("\n• ")}\n\nFix these in Settings (then use Edit → Refresh terms from Settings) before issuing, or continue anyway.` : "";
+      if (!window.confirm(`Mark this quotation as sent?\n\nThis issues the quotation and its Warranty Statement: the revision is locked and its prices, terms and business details are preserved exactly as issued. Further changes will need a new revision.${warning}`)) return;
+    }
     void act(() => api.post(`/quotes/${d.id}/revisions/${rev.id}/status`, { status }), `Marked as ${STATUS_LABEL[status].toLowerCase()}.`);
   };
   const revise = async () => {
@@ -67,7 +72,8 @@ export function QuoteView() {
         actions={<>
           {latest && isDraft && <Link className="btn primary" to={`/quotes/${d.id}/edit`}><Icon name="edit" />Edit</Link>}
           {latest && !isDraft && <button className="btn" disabled={busy} onClick={revise}><Icon name="edit" />New revision</button>}
-          <a className="btn" href={pdfUrl(d.id, rev.id, true)}><Icon name="download" />Download PDF</a>
+          <a className="btn" href={pdfUrl(d.id, rev.id, true, "quotation")}><Icon name="download" />Quotation PDF</a>
+          <a className="btn" href={pdfUrl(d.id, rev.id, true, "warranty")}><Icon name="download" />Warranty Statement PDF</a>
           <button className="btn" onClick={duplicate}><Icon name="copy" />Duplicate</button>
           {neverIssued && <button className="btn danger" onClick={remove}><Icon name="trash" /></button>}
         </>}
@@ -94,6 +100,7 @@ export function QuoteView() {
             Issued {formatDate(rev.issuedAt)} — locked. Prices, GST treatment, terms and business details are preserved as issued.
           </div>
         )}
+        {customer.data && <DocumentsNotice q={customer.data} both={pdfUrl(d.id, rev.id, true, "both")} />}
       </div>
 
       <div className="tabs" style={{ marginBottom: 12 }}>
@@ -105,11 +112,16 @@ export function QuoteView() {
       {tab === "preview" && (customer.data ? <CustomerPreview q={customer.data} /> : <Loading error={customer.error} />)}
       {tab === "pdf" && <>
         <div className="row" style={{ marginBottom: 10 }}>
-          <a className="btn sm" href={pdfUrl(d.id, rev.id)} target="_blank" rel="noopener"><Icon name="eye" />Open PDF</a>
-          <a className="btn sm" href={pdfUrl(d.id, rev.id, true)}><Icon name="download" />Download PDF</a>
+          <div className="seg" role="group" aria-label="Document">
+            <button className={pdfKind === "quotation" ? "active" : ""} onClick={() => setPdfKind("quotation")}>Quotation</button>
+            <button className={pdfKind === "warranty" ? "active" : ""} onClick={() => setPdfKind("warranty")}>Warranty Statement</button>
+          </div>
+          <a className="btn sm" href={pdfUrl(d.id, rev.id, false, pdfKind)} target="_blank" rel="noopener"><Icon name="eye" />Open PDF</a>
+          <a className="btn sm" href={pdfUrl(d.id, rev.id, true, pdfKind)}><Icon name="download" />Download PDF</a>
+          <a className="btn sm" href={pdfUrl(d.id, rev.id, true, "both")}><Icon name="download" />Both documents</a>
           <span className="muted small hide-sm">If the preview below is blank on your device, use Open PDF.</span>
         </div>
-        <PdfPreview src={pdfUrl(d.id, rev.id)} />
+        <PdfPreview key={pdfKind} src={pdfUrl(d.id, rev.id, false, pdfKind)} />
       </>}
       {tab === "internal" && <InternalCosting d={d} />}
     </>
@@ -200,11 +212,13 @@ function CustomerPreview({ q }: { q: CustomerQuote }) {
       <div className="pre">{q.depositTerms || "[Deposit terms to be provided]"}</div>
       <div className="pre" style={{ marginTop: 6 }}>{q.paymentTerms || "[Payment terms to be provided]"}</div>
       <h4>Warranty</h4>
-      <Paras text={q.warrantyText || "[Warranty information to be provided]"} />
+      {q.documentFormat === 2
+        ? <Paras text={warrantySummary(q.business.name, q.warrantyText)} labels={false} />
+        : <Paras text={q.warrantyText || "[Warranty information to be provided]"} />}
       <h4>Customer acceptance</h4>
       {q.acceptanceText && <div className="pre">{q.acceptanceText}</div>}
       {q.business.email && <p>Written acceptance can also be sent by email to <b>{q.business.email}</b>, quoting {q.reference}.</p>}
-      <p><b>I accept quotation {q.reference} for a total of {formatAud(q.totalCents)}{q.gstRegistered ? " including GST" : ""}.</b></p>
+      <p><b>{acceptanceStatement(q.reference, formatAud(q.totalCents), q.gstRegistered, q.business.name, q.documentFormat ?? 2)}</b></p>
       <div className="grid g2" style={{ marginTop: 26, gap: 28 }}>
         {["Customer name", "Signature", "Date", "Purchase order / reference (optional)"].map((l) => (
           <div key={l} style={{ borderTop: "1px solid var(--muted)", paddingTop: 4 }} className="small muted">{l}</div>
@@ -275,4 +289,25 @@ function Paras({ text, labels = true }: { text: string; labels?: boolean }) {
       </div>
     );
   })}</>;
+}
+
+/** Reminds the user that the Warranty Statement must accompany the quotation, and flags missing mandatory details. */
+function DocumentsNotice({ q, both }: { q: CustomerQuote; both: string }) {
+  const missing = documentWarnings(q);
+  return (
+    <div style={{ margin: "0 12px 12px" }} className="stack">
+      {q.documentFormat === 2 ? (
+        <div className="notice info row" style={{ justifyContent: "space-between" }}>
+          <span>The <b>Warranty Statement</b> forms part of this quotation and must be sent with it.</span>
+          <a className="btn sm" href={both}><Icon name="download" />Download both documents (one PDF)</a>
+        </div>
+      ) : (
+        <div className="notice info">This revision was issued with the full warranty printed inside the quotation. It is preserved as issued; a Warranty Statement can still be downloaded for reference.</div>
+      )}
+      {missing.length > 0 && (
+        <div className="notice warn"><strong>Required information is missing</strong> — fix in Settings, then refresh this draft&apos;s terms before issuing:
+          <ul>{missing.map((m) => <li key={m}>{m}</li>)}</ul></div>
+      )}
+    </div>
+  );
 }

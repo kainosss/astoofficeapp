@@ -156,3 +156,95 @@ export function splitScopeTitle(scope: string): { title: string; body: string } 
   if (/^scope of works\b/i.test(first) && first.length <= 80) return { title: first, body: lines.slice(1).join("\n").trim() };
   return { title: "Scope of works", body: scope.trim() };
 }
+
+// ---------------------------------------------------------------------------
+// Warranty Statement (separate document accompanying each quotation)
+// ---------------------------------------------------------------------------
+
+/** Quotation document format: 1 = full warranty printed inside the quotation (legacy issued quotes),
+ *  2 = short warranty summary in the quotation + separate Warranty Statement. */
+export type DocumentFormat = 1 | 2;
+export const CURRENT_DOCUMENT_FORMAT: DocumentFormat = 2;
+
+export const BENEFITS_IN_ADDITION =
+  "The benefits given by this warranty are in addition to other rights and remedies you have under a law in relation to the goods and services to which the warranty relates.";
+
+/** Workmanship warranty period in months, read from the revision's own warranty wording. */
+export function workmanshipMonths(warrantyText: string): number | null {
+  const m = warrantyText.match(/workmanship[^.]*?(\d{1,3})[\s-]*months?/i) ?? warrantyText.match(/(\d{1,3})[\s-]*months?/i);
+  return m ? Number(m[1]) : null;
+}
+
+/** Short warranty section printed in the quotation (format 2). */
+export function warrantySummary(businessName: string, warrantyText: string): string {
+  const name = businessName.trim() || "ASTO SECURITY";
+  const months = workmanshipMonths(warrantyText);
+  const period = months ? `a ${months}-month installation workmanship warranty` : "an installation workmanship warranty";
+  return [
+    `${name} provides ${period}. Supplied equipment is covered by the applicable manufacturer's warranty.`,
+    "",
+    `Full warranty terms, claim procedures and Australian Consumer Law information are provided in the accompanying ${name} Warranty Statement, which forms part of this quotation.`,
+  ].join("\n");
+}
+
+export function acceptanceStatement(reference: string, total: string, gstRegistered: boolean, businessName: string, format: DocumentFormat): string {
+  const base = `I accept quotation ${reference} for a total of ${total}${gstRegistered ? " including GST" : ""}`;
+  return format === 2
+    ? `${base}, and acknowledge receipt of the accompanying ${businessName.trim() || "ASTO SECURITY"} Warranty Statement, which forms part of this quotation.`
+    : `${base}.`;
+}
+
+export interface WarrantySection { title: string; paragraphs: string[] }
+
+const SECTION_BY_LABEL: [RegExp, string][] = [
+  [/^workmanship warranty$/i, "Installation Workmanship Warranty"],
+  [/^(equipment|manufacturer('s)?( equipment)?) warranty$/i, "Manufacturer Equipment Warranty"],
+  [/^how to (make a (warranty )?)?claim$/i, "How to Make a Warranty Claim"],
+  [/^(warranty )?claim expenses$/i, "Warranty Claim Expenses"],
+];
+const LABEL_RE = /^([^:.\n]{3,48}):\s+([\s\S]+)$/;
+const norm = (t: string) => t.replace(/\s+/g, " ").trim();
+
+/** Split saved warranty wording into the Warranty Statement's sections, preserving every word and its order. */
+export function warrantySections(text: string): WarrantySection[] {
+  const out: WarrantySection[] = [];
+  const add = (title: string, para: string) => {
+    const last = out[out.length - 1];
+    if (last && last.title === title) last.paragraphs.push(para);
+    else out.push({ title, paragraphs: [para] });
+  };
+  const aclStart = norm(ACL_NOTICE_GOODS_AND_SERVICES).slice(0, 60).toLowerCase();
+  for (const para of text.replace(/\r\n/g, "\n").split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean)) {
+    const m = para.match(LABEL_RE);
+    const mapped = m ? SECTION_BY_LABEL.find(([re]) => re.test(m[1].trim())) : undefined;
+    if (m && mapped) { add(mapped[1], m[2].trim()); continue; }
+    const n = norm(para).toLowerCase();
+    if (n.startsWith(aclStart) || n.startsWith("the benefits given by this warranty")) add("Australian Consumer Law", para);
+    else if (/^this voluntary/.test(n) || n.includes("apply only to this voluntary warranty")) add("Voluntary Warranty Conditions", para);
+    else add("Warranty Terms", para);
+  }
+  return out;
+}
+
+export interface DocumentCheckInputs {
+  business: { name: string; abn: string; email: string; phone: string; address: string };
+  warrantyText: string;
+  depositTerms: string;
+  paymentTerms: string;
+}
+
+/** Mandatory or placeholder information missing from a quotation's documents (checked before issuing). */
+export function documentWarnings(d: DocumentCheckInputs): string[] {
+  const w: string[] = [];
+  if (!d.business.abn.trim()) w.push("Business ABN is missing.");
+  if (!d.business.address.trim()) w.push("Business address is missing (required in the Warranty Statement).");
+  if (!d.business.phone.trim()) w.push("Business phone number is missing (required in the Warranty Statement).");
+  if (!d.business.email.trim()) w.push("Business email is missing (required in the Warranty Statement).");
+  const text = norm(d.warrantyText);
+  if (!text.includes(norm(ACL_NOTICE_GOODS_AND_SERVICES))) w.push("The warranty wording does not contain the complete prescribed Australian Consumer Law notice for goods and services.");
+  if (!text.toLowerCase().includes("in addition to other rights and remedies")) w.push("The warranty wording does not state that its benefits are in addition to other rights and remedies under the law.");
+  if (!/claim/i.test(text) || !/(contact|email|phone)/i.test(text)) w.push("The warranty wording does not explain how to make a claim.");
+  if (!/expense/i.test(text)) w.push("The warranty wording does not state who bears the expenses of making a claim.");
+  if (/\[[^\]]{3,}\]/.test([d.warrantyText, d.depositTerms, d.paymentTerms].join("\n"))) w.push("The warranty, deposit or payment wording still contains [placeholder] text.");
+  return w;
+}
