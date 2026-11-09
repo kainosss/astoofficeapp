@@ -9,79 +9,104 @@
  * sections without altering any words — the prescribed Australian Consumer Law notice is printed exactly
  * as saved and is never split across pages.
  */
-import { warrantySections, workmanshipMonths } from "../../shared/terms";
+import { warrantySections } from "../../shared/terms";
 import type { CustomerQuote } from "../../shared/types";
 import {
   BODY, C, continuationHeader, createDocument, drawDocumentHeader, drawFooters, drawParties, formatDate, HEADING_H, LEADING, M,
-  USABLE, WIDTH, wrap, Writer, type RenderOptions,
+  USABLE, WIDTH, wrap, Writer, type LayoutEvent, type RenderOptions,
 } from "./layout";
 
+/** Space above section headings: normal, then a slightly tighter fallback tried before using a second page. */
+const HEADING_GAPS = [15, 12];
+
+interface Pass { bytes: Uint8Array; events: LayoutEvent[]; pages: number }
+
+/**
+ * Render the Warranty Statement. It aims for ONE page. If the content does not fit (for example with a tall
+ * logo or long contact details), it is rendered on two pages with the break placed before whichever section
+ * gives the most balanced pages — never inside a section and never inside the Australian Consumer Law notice.
+ */
 export async function renderWarrantyPdf(q: CustomerQuote, options: RenderOptions = {}): Promise<Uint8Array> {
+  let first = await layoutWarranty(q, null, HEADING_GAPS[0]);
+  for (const gap of HEADING_GAPS.slice(1)) if (first.pages > 1) first = await layoutWarranty(q, null, gap);
+  let chosen = first;
+  if (first.pages > 1) {
+    const titles = warrantySections(q.warrantyText).map((sec) => sec.title).slice(1);
+    let best: { pass: Pass; score: number } | null = null;
+    for (const title of titles) {
+      const pass = await layoutWarranty(q, title, HEADING_GAPS[0]);
+      if (pass.pages !== 2) continue;
+      const fill = [1, 2].map((pg) => {
+        const onPage = pass.events.filter((e) => e.page === pg);
+        return onPage.length ? onPage[0].top - Math.min(...onPage.map((e) => e.bottom)) : 0;
+      });
+      const score = Math.abs(fill[0] - fill[1]);
+      if (!best || score < best.score) best = { pass, score };
+    }
+    if (best) chosen = best.pass;
+  }
+  chosen.events.forEach((e) => options.onLayout?.(e));
+  return chosen.bytes;
+}
+
+async function layoutWarranty(q: CustomerQuote, breakBefore: string | null, headingGap: number): Promise<Pass> {
+  const events: LayoutEvent[] = [];
   const name = q.business.name.trim() || "ASTO SECURITY";
   const draft = q.status === "draft";
-  const months = workmanshipMonths(q.warrantyText);
   const { doc, fonts, clean, logo } = await createDocument(
     { title: `${name} Warranty Statement — Quotation ${q.reference}`, author: name, subject: `Warranty Statement for quotation ${q.reference}` },
     q.business.logoDataUrl,
   );
-  const w = new Writer(doc, fonts, clean, continuationHeader(name, `Warranty Statement — Quotation ${q.reference}${draft ? " (DRAFT)" : ""}`), options.onLayout);
+  const w = new Writer(doc, fonts, clean, continuationHeader(name, `Warranty Statement — Quotation ${q.reference}${draft ? " (DRAFT)" : ""}`), (e) => events.push(e));
+  w.headingGap = headingGap;
 
   // ---------- Header & parties ----------
   drawDocumentHeader(w, logo, q.business, draft ? "WARRANTY STATEMENT — DRAFT" : "WARRANTY STATEMENT",
-    [["Quotation", q.reference], ["Quotation date", formatDate(q.issueDate)],
-      ["Workmanship warranty", months ? `${months} months` : "See below"]]);
-  drawParties(w, q, "CUSTOMER");
+    [["Quotation", q.reference], ["Quotation date", formatDate(q.issueDate)]]);
+  drawParties(w, q, "CUSTOMER", true);
 
-  // ---------- Title & purpose ----------
-  const title = wrap(clean(`Warranty Statement for quotation ${q.reference}`), fonts.bold, 12.5, WIDTH);
-  w.y -= 14;
-  title.forEach((l) => { w.y -= 17.75; w.text(l, M.left, w.y + 3, { font: fonts.bold, size: 12.5 }); });
-  w.y -= 4;
+  // ---------- Purpose ----------
+  w.y -= 6;
   w.paragraph(
-    `This Warranty Statement accompanies quotation ${q.reference} dated ${formatDate(q.issueDate)} and forms part of that quotation. ` +
-    `It applies to the goods and services supplied by ${name} under that quotation at the installation address shown above.`,
+    `This Warranty Statement forms part of quotation ${q.reference} dated ${formatDate(q.issueDate)} and applies to the goods and services ` +
+    `supplied by ${name} under that quotation at the installation address shown above.`,
     { labels: false, keep: true },
   );
 
-  // ---------- Warrantor details (name, ABN, address, phone, email) ----------
-  const rows: [string, string][] = [
-    ["Business name", name],
-    ["ABN", q.business.abn.trim() || "[ABN to be provided]"],
-    ["Business address", q.business.address.trim() || "[Business address to be provided]"],
-    ["Phone", q.business.phone.trim() || "[Phone number to be provided]"],
-    ["Email", q.business.email.trim() || "[Email address to be provided]"],
-  ];
-  const valueX = M.left + 120;
-  const rowLines = rows.map(([, v]) => wrap(clean(v), fonts.regular, BODY, WIDTH - 126));
-  const rowsHeight = rowLines.reduce((h, ls) => h + ls.length * LEADING + 4, 0) + 6;
-  w.heading("Warrantor", rowsHeight);
-  const rowsTop = w.y;
-  w.page.drawRectangle({ x: M.left, y: w.y - rowsHeight + 2, width: WIDTH, height: rowsHeight - 2, color: C.fill });
-  w.y -= 3;
-  rows.forEach(([k], i) => {
-    w.y -= LEADING;
-    w.text(k, M.left + 8, w.y + 3, { font: fonts.bold, size: 9, color: C.muted });
-    rowLines[i].forEach((l, j) => { if (j) w.y -= LEADING; w.text(l, valueX, w.y + 3); });
-    w.y -= 4;
-  });
-  w.y -= 3;
-  w.record("warrantor", "warrantor", rowsTop);
+  // ---------- Warrantor (name, ABN, address, phone, email) — compact shaded panel ----------
+  const details = [
+    name,
+    `ABN ${q.business.abn.trim() || "[to be provided]"}`,
+    q.business.address.trim() || "[Business address to be provided]",
+    `Phone ${q.business.phone.trim() || "[to be provided]"}`,
+    `Email ${q.business.email.trim() || "[to be provided]"}`,
+  ].join("   |   ");
+  const labelW = 72;
+  const lines = wrap(clean(details), fonts.regular, BODY, WIDTH - labelW - 16);
+  const panelH = lines.length * LEADING + 10;
+  w.ensure(panelH + 6);
+  const panelTop = w.y - 2;
+  w.page.drawRectangle({ x: M.left, y: panelTop - panelH, width: WIDTH, height: panelH, color: C.fill });
+  w.text("WARRANTOR", M.left + 8, panelTop - 5 - LEADING + 3, { font: fonts.bold, size: 8, color: C.green });
+  lines.forEach((l, i) => w.text(l, M.left + 8 + labelW, panelTop - 5 - (i + 1) * LEADING + 3));
+  w.y = panelTop - panelH - 2;
+  w.record("warrantor", "warrantor", panelTop);
 
   // ---------- Warranty sections from the revision's saved wording ----------
   const sections = warrantySections(q.warrantyText);
   if (!sections.length) {
     w.textSection("Warranty terms", "[Warranty information to be provided — add it in Settings → Warranty.]", { labels: false });
   }
-  for (const s of sections) {
-    const text = s.paragraphs.join("\n\n");
+  for (const sec of sections) {
+    if (breakBefore && sec.title === breakBefore && w.pageNo === 1) w.newPage();
     // The Australian Consumer Law section (incl. the prescribed notice) is always kept on one page.
-    if (s.title === "Australian Consumer Law") {
-      const h = s.paragraphs.reduce((acc, p) => acc + w.paragraphHeight(p, { labels: false }), 0);
+    if (sec.title === "Australian Consumer Law") {
+      const h = sec.paragraphs.reduce((acc, p) => acc + w.paragraphHeight(p, { labels: false }), 0);
       if (HEADING_H + h <= USABLE) w.ensure(HEADING_H + h);
-      w.heading(s.title, h);
-      s.paragraphs.forEach((p) => w.paragraph(p, { labels: false, keep: true }));
+      w.heading(sec.title, h);
+      sec.paragraphs.forEach((p) => w.paragraph(p, { labels: false, keep: true }));
     } else {
-      w.textSection(s.title, text, { labels: false });
+      w.textSection(sec.title, sec.paragraphs.join("\n\n"), { labels: false });
     }
   }
 
@@ -89,5 +114,5 @@ export async function renderWarrantyPdf(q: CustomerQuote, options: RenderOptions
   drawFooters(w, `${name}  |  ABN ${q.business.abn.trim() || "[to be provided]"}  |  Warranty Statement — Quotation ${q.reference}`,
     draft ? "DRAFT — ACCOMPANIES A DRAFT QUOTATION" : null);
 
-  return doc.save();
+  return { bytes: await doc.save(), events, pages: w.pages.length };
 }

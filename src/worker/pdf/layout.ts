@@ -97,6 +97,8 @@ export class Writer {
   page!: PDFPage;
   y = 0;
   pageTop = 0;
+  /** Space above each section heading (the quotation uses the default). */
+  headingGap = 20;
   pages: PDFPage[] = [];
   constructor(
     private doc: PDFDocument,
@@ -198,9 +200,9 @@ export class Writer {
   // ---------- Headings ----------
   /** Draw a section heading, ensuring `following` points of content fit beneath it. */
   heading(s: string, following: number) {
-    this.ensure(HEADING_H + following);
+    this.ensure(HEADING_H - 20 + this.headingGap + following);
     const top = this.y;
-    this.y -= 20;
+    this.y -= this.headingGap;
     this.text(s.toUpperCase(), M.left, this.y, { font: this.f.bold, size: 9, color: C.green });
     this.y -= 5;
     this.page.drawLine({ start: { x: M.left, y: this.y }, end: { x: M.left + WIDTH, y: this.y }, thickness: 0.6, color: C.rule });
@@ -344,12 +346,13 @@ export function drawDocumentHeader(w: Writer, logo: PDFImage | null, business: D
 }
 
 /** "Prepared for" / "Installation address" two-column block. */
-export function drawParties(w: Writer, p: DocParty, leftTitle = "PREPARED FOR") {
+export function drawParties(w: Writer, p: DocParty, leftTitle = "PREPARED FOR", compact = false) {
   const colW = WIDTH / 2 - 10;
   const blockTop = w.y;
   w.text(leftTitle, M.left, w.y, { font: w.f.bold, size: 8, color: C.green });
   w.text("INSTALLATION ADDRESS", M.left + WIDTH / 2 + 10, w.y, { font: w.f.bold, size: 8, color: C.green });
-  const custLines = [p.customer.name, p.customer.contactPerson && p.customer.contactPerson !== p.customer.name ? `Attn: ${p.customer.contactPerson}` : "", p.customer.phone, p.customer.email].filter(Boolean);
+  const custLines = [p.customer.name, p.customer.contactPerson && p.customer.contactPerson !== p.customer.name ? `Attn: ${p.customer.contactPerson}` : "",
+    ...(compact ? [] : [p.customer.phone, p.customer.email])].filter(Boolean);
   const siteLines = p.site ? [p.site.address, [p.site.suburb, p.site.state, p.site.postcode].filter(Boolean).join(" ")].filter(Boolean) : ["To be confirmed"];
   const drawCol = (lines: string[], x: number) => {
     let y = blockTop - 14;

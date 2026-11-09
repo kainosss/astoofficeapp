@@ -6,8 +6,10 @@ import type { CustomerQuote, QuoteDetail, Settings } from "../src/shared/types";
 import { renderQuotePdf, type LayoutEvent } from "../src/worker/pdf/quotePdf";
 import { renderWarrantyPdf } from "../src/worker/pdf/warrantyPdf";
 import {
-  BOWLS_CLUB_ITEMS, BOWLS_CLUB_LABOUR_HOURS_CENTI, BOWLS_CLUB_SETTINGS_PATCH, BOWLS_CLUB_TOTAL_CENTS, BOWLS_CLUB_TRAVEL_CENTS,
+  BOWLS_CLUB_EQUIPMENT_CENTS, BOWLS_CLUB_ITEMS, BOWLS_CLUB_LABOUR_CENTS, BOWLS_CLUB_LABOUR_HOURS_CENTI, BOWLS_CLUB_MATERIALS_CENTS,
+  BOWLS_CLUB_SETTINGS_PATCH, BOWLS_CLUB_TOTAL_CENTS, BOWLS_CLUB_TRAVEL_CENTS,
 } from "./fixtures/bowlsClub";
+import { TEST_LOGO_DATA_URL } from "./fixtures/testLogo";
 import { api, pdfPlain, pdfText, resetDb, seed, textContains } from "./helpers";
 
 const BOTTOM_MARGIN = 62;
@@ -97,10 +99,18 @@ describe("bowls club regression quotation (modelled on ASTO-Q-0003)", () => {
     const d = (await api<QuoteDetail>(`/quotes/${q.id}`)).body;
     expect(d.revision.totals.totalCents).toBe(BOWLS_CLUB_TOTAL_CENTS);
     expect(d.revision.totals.gstCents).toBe(0);
-    expect(d.revision.totals.items.map((i) => i.sellCents)).toEqual([150000, 70000, 20000, 37000, 9600]);
+    expect(d.revision.totals.items.map((i) => i.sellCents)).toEqual([155400, 70000, 20000, 37000, 11000]);
+    expect(d.revision.totals.equipmentSellCents).toBe(BOWLS_CLUB_EQUIPMENT_CENTS);
+    expect(d.revision.totals.materialSellCents + d.revision.totals.consumablesSellCents).toBe(BOWLS_CLUB_MATERIALS_CENTS);
+    expect(d.revision.totals.labourSellCents).toBe(BOWLS_CLUB_LABOUR_CENTS);
+    expect(d.revision.totals.travelSellCents).toBe(0);
     const cq = await customerView(q.id, q.revisionId);
     expect(cq.totalCents).toBe(BOWLS_CLUB_TOTAL_CENTS);
-    expect(cq.priceLines.reduce((a, l) => a + l.amountCents, 0)).toBe(BOWLS_CLUB_TOTAL_CENTS);
+    expect(cq.priceLines).toEqual([
+      { label: "Equipment", amountCents: 245400 },
+      { label: "Cabling, materials and consumables", amountCents: 48000 },
+      { label: "Installation and configuration labour", amountCents: 135200 },
+    ]);
     expect(cq.gstStatement).toBe("ASTO SECURITY is not registered for GST. No GST has been charged on this quotation.");
   });
 
@@ -122,7 +132,7 @@ describe("bowls club regression quotation (modelled on ASTO-Q-0003)", () => {
     await setupSettings();
     const q = await createBowlsClubQuote();
     const text = await pdfText((await api<ArrayBuffer>(`/quotes/${q.id}/revisions/${q.revisionId}/pdf`)).body);
-    for (const leak of ["189.20", "528.00", "154.00", "192.50", "Tradezone", "FIXTURE-", "Sundries", "markup", "margin", "surplus"])
+    for (const leak of ["189.20", "528.00", "154.00", "165.00", "60.00", "Tradezone", "FIXTURE-", "Sundries", "markup", "margin", "surplus"])
       expect(textContains(text, leak), `PDF leaked "${leak}"`).toBe(false);
     expect(textContains(text, "$4,286.00")).toBe(true);
   });
@@ -146,7 +156,7 @@ describe("bowls club regression quotation (modelled on ASTO-Q-0003)", () => {
       "Full warranty terms, claim procedures and Australian Consumer Law information are provided in the accompanying ASTO SECURITY Warranty Statement, which forms part of this quotation.",
       "and acknowledge receipt of the accompanying ASTO SECURITY Warranty Statement",
       "Written acceptance can also be sent by email to office@example.com", "Customer name", "Signature", "Date",
-      "No deposit is required.", "within 14 days of completion",
+      "No deposit is required.", "Payment is due within 14 calendar days of the invoice date.", "$2,454.00", "$480.00", "$1,352.00",
     ]) expect(textContains(text, s), `quotation missing "${s}"`).toBe(true);
     // The full warranty and ACL notice are NOT repeated in the quotation.
     for (const s of ["How to claim", "Our goods and services come with guarantees", "Claim expenses"])
@@ -296,7 +306,7 @@ describe("Warranty Statement PDF", () => {
     for (const s of [
       "ASTO SECURITY", "WARRANTY STATEMENT", q.quoteNumber, "Riverside Lawn Bowls Club (fixture)", "1 Fixture Street", "Gaythorne QLD 4051",
       "ABN 00 000 000 000", "10 Example Street, Brisbane QLD 4000", "office@example.com", "0491 570 156",
-      `This Warranty Statement accompanies quotation ${q.quoteNumber}`,
+      `This Warranty Statement forms part of quotation ${q.quoteNumber}`,
       "WARRANTOR", "INSTALLATION WORKMANSHIP WARRANTY", "MANUFACTURER EQUIPMENT WARRANTY", "HOW TO MAKE A WARRANTY CLAIM",
       "WARRANTY CLAIM EXPENSES", "VOLUNTARY WARRANTY CONDITIONS", "AUSTRALIAN CONSUMER LAW",
       "12 months from the date of completion", "Equipment is covered by the applicable manufacturer's warranty",
@@ -305,7 +315,7 @@ describe("Warranty Statement PDF", () => {
       "The benefits given by this warranty are in addition to other rights and remedies you have under a law in relation to the goods and services to which the warranty relates.",
       ...aclLines(),
     ]) expect(textContains(text, s), `warranty statement missing "${s}"`).toBe(true);
-    for (const leak of ["189.20", "528.00", "Tradezone", "FIXTURE-", "$4,286.00", "markup"])
+    for (const leak of ["189.20", "528.00", "154.00", "165.00", "Tradezone", "FIXTURE-", "$4,286.00", "markup"])
       expect(textContains(text, leak), `warranty statement leaked "${leak}"`).toBe(false);
   });
 
@@ -430,5 +440,78 @@ describe("quotation and Warranty Statement together", () => {
     const w = documentWarnings(incomplete);
     for (const s of ["email", "address", "prescribed Australian Consumer Law notice", "in addition to other rights", "who bears the expenses", "[placeholder]"])
       expect(w.some((x) => x.includes(s)), `missing warning about "${s}"`).toBe(true);
+  });
+});
+
+describe("final document checks", () => {
+  const imageCount = async (bytes: ArrayBuffer) => (await pdfText(bytes)).split("/Subtype /Image").length - 1;
+
+  it("fits the Warranty Statement on one page without a logo", async () => {
+    await setupSettings();
+    const q = await createBowlsClubQuote();
+    const { events } = await warrantyLayout(await customerView(q.id, q.revisionId));
+    assertWarrantyLayout(events);
+    expect(Math.max(...events.map((e) => e.page))).toBe(1);
+  });
+
+  it("shows the configured logo on both documents and keeps the Warranty Statement balanced", async () => {
+    await setupSettings({ logoDataUrl: TEST_LOGO_DATA_URL });
+    const q = await createBowlsClubQuote();
+    const counts: number[] = [];
+    for (const kind of ["pdf", "warranty-pdf"]) {
+      const bytes = (await api<ArrayBuffer>(`/quotes/${q.id}/revisions/${q.revisionId}/${kind}`)).body;
+      counts.push(await imageCount(bytes)); // a transparent PNG is stored as image + transparency mask
+    }
+    expect(counts[0], "quotation has no logo image").toBeGreaterThanOrEqual(1);
+    expect(counts[1], "warranty statement logo differs from quotation").toBe(counts[0]);
+    // Without a logo there are no images at all (text heading is used instead).
+    await setupSettings({ logoDataUrl: null });
+    const q2 = await createBowlsClubQuote();
+    expect(await imageCount((await api<ArrayBuffer>(`/quotes/${q2.id}/revisions/${q2.revisionId}/warranty-pdf`)).body)).toBe(0);
+    await setupSettings({ logoDataUrl: TEST_LOGO_DATA_URL });
+    const cq = await customerView(q.id, q.revisionId);
+    expect(cq.business.logoDataUrl).toBe(TEST_LOGO_DATA_URL);
+    const { events } = await warrantyLayout(cq);
+    assertWarrantyLayout(events);
+    const pages = Math.max(...events.map((e) => e.page));
+    if (pages === 2) {
+      // Balanced: the second page is never just the legal notice.
+      const page2 = events.filter((e) => e.page === 2);
+      expect(page2.filter((e) => e.kind === "heading").length).toBeGreaterThanOrEqual(2);
+    } else expect(pages).toBe(1);
+    // The quotation still fits on two pages with the logo.
+    expect(Math.max(...(await layoutOf(cq)).events.map((e) => e.page))).toBe(2);
+  });
+
+  it("falls back to two balanced pages when the content cannot fit on one", async () => {
+    await setupSettings({ logoDataUrl: TEST_LOGO_DATA_URL });
+    const q = await createBowlsClubQuote();
+    const base = await customerView(q.id, q.revisionId);
+    const long = { ...base, warrantyText: base.warrantyText.replace("This voluntary workmanship", "Additional warranty wording for layout testing. ".repeat(12) + "\n\nThis voluntary workmanship") };
+    const { events } = await warrantyLayout(long);
+    assertWarrantyLayout(events);
+    expect(Math.max(...events.map((e) => e.page))).toBe(2);
+    const fill = [1, 2].map((pg) => { const on = events.filter((e) => e.page === pg); return on[0].top - Math.min(...on.map((e) => e.bottom)); });
+    expect(Math.min(...fill) / Math.max(...fill), `unbalanced pages: ${fill.map((f) => f.toFixed(0)).join(" / ")}`).toBeGreaterThan(0.4);
+  });
+
+  it("uses the same quotation number, revision and warranty terms in both documents, with no internal costs", async () => {
+    await setupSettings();
+    const q = await createBowlsClubQuote();
+    const cq = await customerView(q.id, q.revisionId);
+    const quote = await pdfText((await api<ArrayBuffer>(`/quotes/${q.id}/revisions/${q.revisionId}/pdf`)).body);
+    const warranty = await pdfText((await api<ArrayBuffer>(`/quotes/${q.id}/revisions/${q.revisionId}/warranty-pdf`)).body);
+    for (const doc of [quote, warranty]) {
+      expect(textContains(doc, `Quotation ${cq.reference}`)).toBe(true); // footer on every page of both documents
+      expect(textContains(doc, cq.customer.name)).toBe(true);
+      for (const leak of ["189.20", "528.00", "154.00", "165.00", "Tradezone", "FIXTURE-", "Sundries"]) expect(textContains(doc, leak), leak).toBe(false);
+    }
+    // Every paragraph of this revision's warranty wording appears in the Warranty Statement...
+    for (const sec of warrantySections(cq.warrantyText))
+      for (const para of sec.paragraphs)
+        for (const line of para.split("\n")) expect(textContains(warranty, line.replace(/^•\s*/, "")), line.slice(0, 50)).toBe(true);
+    // ...and the quotation's summary states the same workmanship period.
+    expect(textContains(quote, "a 12-month installation workmanship warranty")).toBe(true);
+    expect(textContains(warranty, "for 12 months from the date of completion")).toBe(true);
   });
 });
