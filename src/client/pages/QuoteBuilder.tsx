@@ -5,7 +5,9 @@ import type { PricingResult } from "../../shared/pricing";
 import { calculateRevision, equipmentToQuoteItem, includedItem, type NewRevisionContentShape } from "../builder";
 import type { CustomerListRow, Equipment, Package, QuoteDetail, QuoteItem, RevisionPricing, Settings, Site } from "../../shared/types";
 import { api } from "../api";
-import { DecimalInput, Field, Icon, Loading, MoneyInput, PageHeader, PercentInput, StatusBadge, useLoad, useToast } from "../components/ui";
+import { scopeTemplate } from "../../shared/quoteBuilder";
+import { SCOPE_TEMPLATE_LABELS, type ScopeTemplateKey } from "../../shared/terms";
+import { DecimalInput, Field, Icon, Loading, Modal, MoneyInput, PageHeader, PercentInput, StatusBadge, useLoad, useToast } from "../components/ui";
 import { NewCustomerModal, NewSiteModal } from "./NewQuote";
 
 type Form = NewRevisionContentShape & { customerId: number; siteId: number | null };
@@ -40,7 +42,7 @@ export function QuoteBuilder() {
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [sites, setSites] = useState<Site[]>([]);
-  const [modal, setModal] = useState<null | "customer" | "site">(null);
+  const [modal, setModal] = useState<null | "customer" | "site" | "refresh">(null);
   const [addId, setAddId] = useState("");
 
   useEffect(() => { if (detail.data && !form) setForm(formFromDetail(detail.data)); }, [detail.data, form]);
@@ -243,6 +245,11 @@ export function QuoteBuilder() {
                         </td>
                         <td>
                           <DecimalInput value={it.quantityCenti} onChange={(v) => setItem(idx, { quantityCenti: v ?? 0 })} suffix={it.unit !== "each" ? it.unit : undefined} ariaLabel="Quantity" />
+                          {!included && (
+                            <label className="check small" style={{ marginTop: 4, fontSize: 11.5 }} title="Untick to show 'Included' instead of the quantity on the customer quotation (e.g. cabling, consumables)">
+                              <input type="checkbox" checked={it.showQuantity !== false} onChange={(e) => setItem(idx, { showQuantity: e.target.checked })} />Show qty
+                            </label>
+                          )}
                         </td>
                         {included ? <td colSpan={5} className="muted small">Part of the kit price above</td> : <>
                           <td>
@@ -322,9 +329,20 @@ export function QuoteBuilder() {
 
           {/* 5. Customer-facing content */}
           <div className="card">
-            <div className="card-head"><div className="section-title"><span className="step">5</span><h2>Scope, inclusions and terms</h2></div><span className="muted small">Shown on the customer quotation</span></div>
+            <div className="card-head"><div className="section-title"><span className="step">5</span><h2>Scope, inclusions and terms</h2></div>
+              <button className="btn sm" onClick={() => setModal("refresh")}>Refresh terms from Settings</button></div>
             <div className="card-body grid g2">
-              <Field label="Scope of works" className="span2"><textarea rows={5} value={form.scope} onChange={(e) => update({ scope: e.target.value })} /></Field>
+              <Field className="span2" label={<span className="row" style={{ justifyContent: "space-between" }}>Scope of works
+                <select style={{ width: "auto", height: 28, fontSize: 12.5 }} value="" aria-label="Insert scope template" onChange={(e) => {
+                  const key = e.target.value as ScopeTemplateKey;
+                  if (!key) return;
+                  if (form.scope.trim() && !window.confirm(`Replace the current scope of works with the ${SCOPE_TEMPLATE_LABELS[key]} template?`)) return;
+                  update({ scope: scopeTemplate(s, key) });
+                }}>
+                  <option value="">Insert template…</option>
+                  {(Object.keys(SCOPE_TEMPLATE_LABELS) as ScopeTemplateKey[]).map((k) => <option key={k} value={k}>{SCOPE_TEMPLATE_LABELS[k]}</option>)}
+                </select></span>} hint="Shown above the equipment list. A first line starting with &quot;Scope of Works&quot; becomes the heading.">
+                <textarea rows={8} value={form.scope} onChange={(e) => update({ scope: e.target.value })} /></Field>
               <Field label="Inclusions" hint="One per line"><textarea rows={6} value={form.inclusions} onChange={(e) => update({ inclusions: e.target.value })} /></Field>
               <Field label="Exclusions" hint="One per line"><textarea rows={6} value={form.exclusions} onChange={(e) => update({ exclusions: e.target.value })} /></Field>
               <Field label="Deposit terms"><textarea rows={3} value={form.depositTerms} onChange={(e) => update({ depositTerms: e.target.value })} /></Field>
@@ -352,6 +370,7 @@ export function QuoteBuilder() {
         </aside>
       </div>
 
+      {modal === "refresh" && <RefreshTermsModal form={form} settings={s} onClose={() => setModal(null)} onApply={(patch) => { update(patch); setModal(null); toast("Terms refreshed — review and save the quotation."); }} />}
       {modal === "customer" && <NewCustomerModal onClose={() => setModal(null)} onCreated={async (cid, sid) => {
         setModal(null); await customers.reload(); update({ customerId: cid, siteId: sid });
       }} />}
@@ -425,5 +444,54 @@ export function SummaryPanel({ totals: t, pricing: p }: { totals: PricingResult;
         </div>
       </div>
     </div>
+  );
+}
+
+type TermKey = "depositTerms" | "paymentTerms" | "warrantyText" | "acceptanceText" | "inclusions" | "exclusions" | "scope";
+const TERM_LABELS: Record<TermKey, string> = {
+  depositTerms: "Deposit terms", paymentTerms: "Payment terms", warrantyText: "Warranty information",
+  acceptanceText: "Acceptance instructions", inclusions: "Inclusions", exclusions: "Exclusions and conditions", scope: "Scope of works (template)",
+};
+
+/** Replace selected customer-facing text on a DRAFT with the current Settings wording. Prices and items are never touched. */
+function RefreshTermsModal({ form, settings, onClose, onApply }: {
+  form: Pick<NewRevisionContentShape, TermKey>; settings: Settings; onClose: () => void; onApply: (patch: Partial<Pick<NewRevisionContentShape, TermKey>>) => void;
+}) {
+  const [scopeKey, setScopeKey] = useState<ScopeTemplateKey>("cctv");
+  const fresh: Record<TermKey, string> = {
+    depositTerms: settings.depositTerms, paymentTerms: settings.paymentTerms, warrantyText: settings.warrantyText,
+    acceptanceText: settings.acceptanceText, inclusions: settings.standardInclusions, exclusions: settings.standardExclusions,
+    scope: scopeTemplate(settings, scopeKey),
+  };
+  const keys = Object.keys(TERM_LABELS) as TermKey[];
+  const differs = (k: TermKey) => (form[k] ?? "").trim() !== fresh[k].trim();
+  const [selected, setSelected] = useState<Set<TermKey>>(() => new Set(keys.filter((k) => k !== "scope" && differs(k))));
+  const toggle = (k: TermKey) => setSelected((cur) => { const n = new Set(cur); if (n.has(k)) n.delete(k); else n.add(k); return n; });
+  const apply = () => {
+    const replacing = [...selected].filter((k) => (form[k] ?? "").trim() && differs(k));
+    if (replacing.length && !window.confirm(`Replace the existing text in: ${replacing.map((k) => TERM_LABELS[k]).join(", ")}?\n\nEquipment, quantities, prices and internal costs are not changed.`)) return;
+    const patch: Partial<Record<TermKey, string>> = {};
+    selected.forEach((k) => { patch[k] = fresh[k]; });
+    onApply(patch);
+  };
+  return (
+    <Modal title="Refresh terms from Settings" onClose={onClose} footer={<><button className="btn" onClick={onClose}>Cancel</button><button className="btn primary" disabled={!selected.size} onClick={apply}>Refresh selected</button></>}>
+      <div className="stack" style={{ gap: 8 }}>
+        <div className="muted small">Choose which sections to replace with the current Settings wording. The quote number, customer, equipment, quantities, prices and internal costs stay the same. Issued quotations are never changed.</div>
+        {keys.map((k) => (
+          <label key={k} className="check" style={{ justifyContent: "space-between" }}>
+            <span className="row" style={{ gap: 7 }}><input type="checkbox" checked={selected.has(k)} onChange={() => toggle(k)} />{TERM_LABELS[k]}</span>
+            <span className="small muted">{differs(k) ? (form[k]?.trim() ? "Differs from Settings" : "Empty on this quote") : "Already matches"}</span>
+          </label>
+        ))}
+        {selected.has("scope") && (
+          <Field label="Scope template">
+            <select value={scopeKey} onChange={(e) => setScopeKey(e.target.value as ScopeTemplateKey)}>
+              {(Object.keys(SCOPE_TEMPLATE_LABELS) as ScopeTemplateKey[]).map((k) => <option key={k} value={k}>{SCOPE_TEMPLATE_LABELS[k]}</option>)}
+            </select>
+          </Field>
+        )}
+      </div>
+    </Modal>
   );
 }

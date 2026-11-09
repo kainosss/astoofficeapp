@@ -84,3 +84,10 @@ Check Cloudflare's current pricing pages before approving; figures above are as 
 - **Point-in-time restore:** `npx wrangler d1 time-travel info asto-office-prod --env production` / `... time-travel restore ...` (7 days Free, 30 days Paid).
 - **Schema changes later:** `npm run db:generate` → review SQL → `npm run db:migrate:prod` → `npm run deploy`.
 - **Rotate access:** edit the Access policy email and `ADMIN_EMAILS` together.
+
+## Release notes
+
+### Quotation improvements (migration `0001_quote_terms`)
+- Adds Settings columns (scope templates, workmanship warranty months, manufacturer warranty wording, claim-expenses choice) and `quote_items.show_quantity` (default on). Additive only: existing settings text, quotes, revisions and totals are unchanged.
+- Deploy order: `npm run backup:prod` → `npm run db:migrate:prod` → `npm run deploy`. Applying the migration before deploying is required — the new code reads the new columns.
+- After deploying: open Settings, resolve the "Missing or placeholder information" warnings, choose who bears warranty claim expenses, and use **Build from template** for the warranty text (review it, especially the prescribed ACL notice, before issuing quotes).

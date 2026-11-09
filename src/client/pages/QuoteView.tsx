@@ -4,6 +4,7 @@ import { centiToInput, formatAud } from "../../shared/money";
 import type { CustomerQuote, QuoteDetail, QuoteStatus } from "../../shared/types";
 import { api, pdfUrl } from "../api";
 import { formatDate, Icon, Loading, PageHeader, STATUS_LABEL, StatusBadge, useLoad, useToast } from "../components/ui";
+import { splitScopeTitle } from "../../shared/terms";
 import { SummaryPanel } from "./QuoteBuilder";
 
 type Tab = "preview" | "pdf" | "internal";
@@ -102,7 +103,14 @@ export function QuoteView() {
       </div>
 
       {tab === "preview" && (customer.data ? <CustomerPreview q={customer.data} /> : <Loading error={customer.error} />)}
-      {tab === "pdf" && <PdfPreview src={pdfUrl(d.id, rev.id)} />}
+      {tab === "pdf" && <>
+        <div className="row" style={{ marginBottom: 10 }}>
+          <a className="btn sm" href={pdfUrl(d.id, rev.id)} target="_blank" rel="noopener"><Icon name="eye" />Open PDF</a>
+          <a className="btn sm" href={pdfUrl(d.id, rev.id, true)}><Icon name="download" />Download PDF</a>
+          <span className="muted small hide-sm">If the preview below is blank on your device, use Open PDF.</span>
+        </div>
+        <PdfPreview src={pdfUrl(d.id, rev.id)} />
+      </>}
       {tab === "internal" && <InternalCosting d={d} />}
     </>
   );
@@ -140,7 +148,7 @@ function CustomerPreview({ q }: { q: CustomerQuote }) {
           </div>
         </div>
         <div className="p-meta">
-          <strong>QUOTATION</strong>
+          <strong>{q.status === "sent" ? "QUOTATION" : `QUOTATION — ${STATUS_LABEL[q.status].toUpperCase()}`}</strong>
           <div className="small"><span className="muted">Quote number</span> <b>{q.reference}</b></div>
           <div className="small"><span className="muted">Issue date</span> {formatDate(q.issueDate)}</div>
           <div className="small"><span className="muted">Valid until</span> {formatDate(q.expiryDate)}</div>
@@ -160,7 +168,7 @@ function CustomerPreview({ q }: { q: CustomerQuote }) {
         </div>
       </div>
       {q.title && <h2 style={{ marginTop: 18 }}>{q.title}</h2>}
-      {q.scope && <><h4>Scope of works</h4><div className="pre">{q.scope}</div></>}
+      {q.scope.trim() && (() => { const sc = splitScopeTitle(q.scope); return sc.body ? <><h4>{sc.title}</h4><Paras text={sc.body} labels={false} /></> : null; })()}
       {q.lines.length > 0 && <>
         <h4>Equipment and materials</h4>
         <table className="table">
@@ -170,7 +178,7 @@ function CustomerPreview({ q }: { q: CustomerQuote }) {
               <tr key={i}>
                 <td style={l.included ? { paddingLeft: 26, color: "var(--muted)" } : undefined}>{l.description}
                   {l.included && <span className="small"> — included in kit</span>}{l.extra && <span className="small muted"> — additional</span>}</td>
-                <td className="num">{l.quantity}{l.unit !== "each" ? ` ${l.unit}` : ""}</td>
+                <td className="num">{l.showQuantity === false ? <span className="muted">Included</span> : <>{l.quantity}{l.unit !== "each" ? ` ${l.unit}` : ""}</>}</td>
               </tr>
             ))}
           </tbody>
@@ -185,16 +193,17 @@ function CustomerPreview({ q }: { q: CustomerQuote }) {
       </table>
       <div className="p-total"><span>Total payable{q.gstRegistered ? " (including GST)" : ""}</span><span>{formatAud(q.totalCents)}</span></div>
       <div className="small muted" style={{ marginTop: 6, fontStyle: "italic" }}>{q.gstStatement}</div>
-      {q.inclusions.length > 0 && <><h4>Inclusions</h4><ul>{q.inclusions.map((x, i) => <li key={i}>{x}</li>)}</ul></>}
-      {q.exclusions.length > 0 && <><h4>Exclusions</h4><ul>{q.exclusions.map((x, i) => <li key={i}>{x}</li>)}</ul></>}
+      {q.inclusions.length > 0 && <><h4>Inclusions</h4><ul>{q.inclusions.map((x, i) => <li key={i}><Labelled text={x} /></li>)}</ul></>}
+      {q.exclusions.length > 0 && <><h4>Exclusions</h4><ul>{q.exclusions.map((x, i) => <li key={i}><Labelled text={x} /></li>)}</ul></>}
       {q.customerNotes && <><h4>Notes</h4><div className="pre">{q.customerNotes}</div></>}
       <h4>Deposit and payment terms</h4>
       <div className="pre">{q.depositTerms || "[Deposit terms to be provided]"}</div>
       <div className="pre" style={{ marginTop: 6 }}>{q.paymentTerms || "[Payment terms to be provided]"}</div>
       <h4>Warranty</h4>
-      <div className="pre">{q.warrantyText || "[Warranty information to be provided]"}</div>
+      <Paras text={q.warrantyText || "[Warranty information to be provided]"} />
       <h4>Customer acceptance</h4>
       {q.acceptanceText && <div className="pre">{q.acceptanceText}</div>}
+      {q.business.email && <p>Written acceptance can also be sent by email to <b>{q.business.email}</b>, quoting {q.reference}.</p>}
       <p><b>I accept quotation {q.reference} for a total of {formatAud(q.totalCents)}{q.gstRegistered ? " including GST" : ""}.</b></p>
       <div className="grid g2" style={{ marginTop: 26, gap: 28 }}>
         {["Customer name", "Signature", "Date", "Purchase order / reference (optional)"].map((l) => (
@@ -240,4 +249,30 @@ function InternalCosting({ d }: { d: QuoteDetail }) {
       <div className="summary"><SummaryPanel totals={t} pricing={r.pricing} /></div>
     </div>
   );
+}
+
+const LABEL_RE = /^([^:.\n]{3,48}):\s+([\s\S]+)$/;
+
+/** "Label: text" rendered with a bold label, matching the PDF. */
+function Labelled({ text, labels = true }: { text: string; labels?: boolean }) {
+  const m = labels ? text.match(LABEL_RE) : null;
+  if (!m) return <>{text}</>;
+  return <><b>{m[1]}</b><br />{m[2]}</>;
+}
+
+/** Blank-line separated paragraphs; "•" lines become a list. */
+function Paras({ text, labels = true }: { text: string; labels?: boolean }) {
+  const paras = text.replace(/\r\n/g, "\n").split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean);
+  return <>{paras.map((p, i) => {
+    const lines = p.split("\n");
+    const bullets = lines.filter((l) => /^\s*[•\-*]\s+/.test(l));
+    if (!bullets.length) return <p key={i} style={{ margin: "0 0 8px", whiteSpace: "pre-wrap" }}><Labelled text={p} labels={labels} /></p>;
+    return (
+      <div key={i} style={{ marginBottom: 8 }}>
+        {lines.map((l, j) => /^\s*[•\-*]\s+/.test(l)
+          ? <div key={j} style={{ paddingLeft: 16, textIndent: -10 }}>• {l.replace(/^\s*[•\-*]\s+/, "")}</div>
+          : <div key={j}><Labelled text={l} labels={labels && j === 0} /></div>)}
+      </div>
+    );
+  })}</>;
 }

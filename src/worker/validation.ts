@@ -34,10 +34,16 @@ export const settingsSchema = z.object({
   minSurplusCents: signedCents,
   depositTerms: str(2000),
   paymentTerms: str(4000),
-  warrantyText: str(4000),
+  warrantyText: str(8000),
   acceptanceText: str(2000),
   standardInclusions: str(4000),
   standardExclusions: str(4000),
+  scopeTemplateCctv: str(8000),
+  scopeTemplateAlarm: str(8000),
+  scopeTemplateMaintenance: str(8000),
+  workmanshipWarrantyMonths: z.number().int().min(0).max(120),
+  manufacturerWarrantyText: str(2000),
+  claimExpensesPolicy: z.enum(["", "business", "customer"]),
 });
 
 export const customerSchema = z.object({
@@ -153,6 +159,7 @@ export const quoteItemSchema = z.object({
   sellUnitCents: unitCents.nullable(),
   inPackage: z.boolean(),
   isEstimate: z.boolean().default(false),
+  showQuantity: z.boolean().default(true),
 });
 
 const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Date must be YYYY-MM-DD");
@@ -171,7 +178,7 @@ export const saveRevisionSchema = z.object({
   exclusions: str(4000).default(""),
   depositTerms: str(2000).default(""),
   paymentTerms: str(4000).default(""),
-  warrantyText: str(4000).default(""),
+  warrantyText: str(8000).default(""),
   acceptanceText: str(2000).default(""),
   customerNotes: str(4000).default(""),
   internalNotes: str(4000).default(""),

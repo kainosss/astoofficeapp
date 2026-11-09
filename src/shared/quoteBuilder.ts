@@ -1,5 +1,6 @@
 /** Helpers to initialise quotation revisions from business settings and CCTV packages. */
 import { calculatePricing, type PricingItem } from "./pricing";
+import { buildWarrantyText, DEFAULT_SCOPE_TEMPLATES, RECOMMENDED_CONDITIONS, type ScopeTemplateKey } from "./terms";
 import type { Equipment, Package, QuoteItem, RevisionPricing, Settings } from "./types";
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -23,11 +24,12 @@ export const DEFAULT_SETTINGS: Settings = {
   minSurplusCents: 25000,
   depositTerms: "[Deposit terms to be confirmed — update in Settings.]",
   paymentTerms: "[Payment terms to be confirmed — update in Settings.]",
-  warrantyText:
-    "[Manufacturer and workmanship warranty details to be confirmed — update in Settings.]\n\n" +
-    "Our goods and services come with guarantees that cannot be excluded under the Australian Consumer Law.",
+  warrantyText: buildWarrantyText({
+    businessName: "ASTO SECURITY", email: "", phone: "", address: "Brisbane, Queensland",
+    workmanshipWarrantyMonths: 12, manufacturerWarrantyText: "", claimExpensesPolicy: "",
+  }),
   acceptanceText:
-    "To accept this quotation, please sign below and return a copy, or confirm your acceptance in writing, before the expiry date.",
+    "To accept this quotation, please sign below and return a copy, or confirm your acceptance in writing by email, before the expiry date.",
   standardInclusions: [
     "Supply of the equipment listed in this quotation",
     "Installation, configuration and testing of the listed equipment",
@@ -41,8 +43,27 @@ export const DEFAULT_SETTINGS: Settings = {
     "Patching, painting or making good beyond minor touch-ups",
     "Internet connection, modem or customer network faults",
     "Concealed cabling where roof or wall access is not available",
+    ...RECOMMENDED_CONDITIONS,
   ].join("\n"),
+  scopeTemplateCctv: DEFAULT_SCOPE_TEMPLATES.cctv,
+  scopeTemplateAlarm: DEFAULT_SCOPE_TEMPLATES.alarm,
+  scopeTemplateMaintenance: DEFAULT_SCOPE_TEMPLATES.maintenance,
+  workmanshipWarrantyMonths: 12,
+  manufacturerWarrantyText: "",
+  claimExpensesPolicy: "",
 };
+
+export function scopeTemplate(settings: Settings, key: ScopeTemplateKey): string {
+  return key === "alarm" ? settings.scopeTemplateAlarm : key === "maintenance" ? settings.scopeTemplateMaintenance : settings.scopeTemplateCctv;
+}
+
+/** Customer-facing product description without a repeated manufacturer name ("Dahua Dahua …"). */
+export function productLabel(manufacturer: string, name: string): string {
+  const m = manufacturer.trim();
+  const n = name.trim();
+  if (!m) return n;
+  return n.toLowerCase().startsWith(m.toLowerCase()) ? n : `${m} ${n}`;
+}
 
 export function equipmentToQuoteItem(e: Equipment, overrides: Partial<QuoteItem> = {}): QuoteItem {
   return {
@@ -50,8 +71,8 @@ export function equipmentToQuoteItem(e: Equipment, overrides: Partial<QuoteItem>
     role: "priced",
     kind: e.kind,
     equipmentId: e.id,
-    name: [e.manufacturer, e.name].filter(Boolean).join(" "),
-    description: e.customerDescription || [e.manufacturer, e.name].filter(Boolean).join(" "),
+    name: productLabel(e.manufacturer, e.name),
+    description: e.customerDescription || productLabel(e.manufacturer, e.name),
     sku: e.sku,
     supplier: e.supplier,
     unit: e.unit,
@@ -63,6 +84,7 @@ export function equipmentToQuoteItem(e: Equipment, overrides: Partial<QuoteItem>
     sellUnitCents: e.sellPriceCents,
     inPackage: false,
     isEstimate: e.isEstimate,
+    showQuantity: true,
     ...overrides,
   };
 }
@@ -71,7 +93,7 @@ export function includedItem(description: string, quantityCenti: number, sortOrd
   return {
     sortOrder, role: "included", kind: "equipment", equipmentId: null, name: description, description,
     sku: "", supplier: "", unit: "each", quantityCenti, packQuantity: 1, costExGstCents: 0, costIncGstCents: 0,
-    markupBp: null, sellUnitCents: null, inPackage: true, isEstimate: false,
+    markupBp: null, sellUnitCents: null, inPackage: true, isEstimate: false, showQuantity: true,
   };
 }
 

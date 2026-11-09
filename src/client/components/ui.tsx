@@ -142,7 +142,7 @@ export function DecimalInput({ value, onChange, allowEmpty = false, placeholder,
   const p = useNumericInput(value, centiToInput, (s) => { const c = toCenti(s); if (c < 0) throw new Error(); return c; }, onChange, allowEmpty);
   return (
     <div className="input-affix">
-      <input {...p} className={`num ${suffix ? "has-post" : ""} ${p.className} ${className ?? ""}`} inputMode="decimal" placeholder={placeholder} disabled={disabled} aria-label={ariaLabel} />
+      <input {...p} className={`num ${suffix ? "has-post" : ""} ${p.className} ${className ?? ""}`} style={suffix ? { paddingRight: 14 + suffix.length * 7 } : undefined} inputMode="decimal" placeholder={placeholder} disabled={disabled} aria-label={ariaLabel} />
       {suffix && <span className="post">{suffix}</span>}
     </div>
   );

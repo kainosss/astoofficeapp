@@ -13,6 +13,7 @@
  */
 import { sql } from "drizzle-orm";
 import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { DEFAULT_SCOPE_ALARM, DEFAULT_SCOPE_CCTV, DEFAULT_SCOPE_MAINTENANCE } from "../../shared/terms";
 
 const timestamps = {
   createdAt: text("created_at").notNull().default(sql`(strftime('%Y-%m-%dT%H:%M:%fZ','now'))`),
@@ -46,6 +47,14 @@ export const settings = sqliteTable("settings", {
   acceptanceText: text("acceptance_text").notNull().default(""),
   standardInclusions: text("standard_inclusions").notNull().default(""),
   standardExclusions: text("standard_exclusions").notNull().default(""),
+  // Added in migration 0001 — reusable scope templates and structured warranty inputs.
+  scopeTemplateCctv: text("scope_template_cctv").notNull().default(DEFAULT_SCOPE_CCTV),
+  scopeTemplateAlarm: text("scope_template_alarm").notNull().default(DEFAULT_SCOPE_ALARM),
+  scopeTemplateMaintenance: text("scope_template_maintenance").notNull().default(DEFAULT_SCOPE_MAINTENANCE),
+  workmanshipWarrantyMonths: integer("workmanship_warranty_months").notNull().default(12),
+  manufacturerWarrantyText: text("manufacturer_warranty_text").notNull().default(""),
+  /** "" (not chosen), "business" or "customer". */
+  claimExpensesPolicy: text("claim_expenses_policy", { enum: ["", "business", "customer"] }).notNull().default(""),
   updatedAt: timestamps.updatedAt,
 });
 
@@ -221,6 +230,8 @@ export const quoteItems = sqliteTable("quote_items", {
   sellUnitCents: integer("sell_unit_cents"),
   inPackage: integer("in_package", { mode: "boolean" }).notNull().default(false),
   isEstimate: integer("is_estimate", { mode: "boolean" }).notNull().default(false),
+  /** Show the quantity on the customer quotation (false = "Included", e.g. cabling and consumables). */
+  showQuantity: integer("show_quantity", { mode: "boolean" }).notNull().default(true),
 }, (t) => [index("quote_items_rev_idx").on(t.revisionId)]);
 
 /** Lightweight audit trail of important actions (status changes, settings changes, exports). */

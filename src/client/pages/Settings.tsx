@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { formatAud } from "../../shared/money";
+import { buildWarrantyText, mergeLines, RECOMMENDED_CONDITIONS, SCOPE_TEMPLATE_LABELS, settingsWarnings } from "../../shared/terms";
 import type { Settings } from "../../shared/types";
 import { api } from "../api";
 import { DecimalInput, Field, Icon, Loading, MoneyInput, PageHeader, PercentInput, useToast } from "../components/ui";
@@ -36,6 +37,7 @@ export function SettingsPage() {
       <PageHeader title="Settings" sub="Business details and pricing defaults. Changes apply to new quotations and drafts — issued quotations keep the values they were issued with."
         actions={<button className="btn primary" disabled={!dirty} onClick={save}>Save settings</button>} />
       <div className="stack" style={{ gap: 16, maxWidth: 1000 }}>
+        <SettingsWarnings s={s} />
         <div className="card">
           <div className="card-head"><h2>Business details</h2><span className="muted small">Shown on quotations</span></div>
           <div className="card-body grid g3">
@@ -92,11 +94,46 @@ export function SettingsPage() {
           <div className="card-head"><h2>Standard quotation text</h2><span className="muted small">Copied into new quotations</span></div>
           <div className="card-body grid g2">
             <Field label="Standard inclusions" hint="One per line"><textarea rows={6} {...text("standardInclusions")} /></Field>
-            <Field label="Standard exclusions" hint="One per line"><textarea rows={6} {...text("standardExclusions")} /></Field>
+            <Field label="Standard exclusions and conditions" hint={<>One per line. &quot;Label: text&quot; lines show the label in bold.{" "}
+              <button type="button" className="btn ghost sm" style={{ padding: 0, height: "auto" }} onClick={() => set({ standardExclusions: mergeLines(s.standardExclusions, RECOMMENDED_CONDITIONS) })}>Add recommended conditions</button></>}>
+              <textarea rows={8} {...text("standardExclusions")} /></Field>
             <Field label="Deposit terms"><textarea rows={3} {...text("depositTerms")} /></Field>
             <Field label="Payment terms"><textarea rows={3} {...text("paymentTerms")} /></Field>
-            <Field label="Warranty information" hint="Do not limit customers' rights under the Australian Consumer Law"><textarea rows={4} {...text("warrantyText")} /></Field>
-            <Field label="Acceptance instructions"><textarea rows={4} {...text("acceptanceText")} /></Field>
+            <Field label="Acceptance instructions" className="span2"><textarea rows={3} {...text("acceptanceText")} /></Field>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><h2>Warranty</h2><span className="muted small">Voluntary warranty against defects — shown on quotations</span></div>
+          <div className="card-body grid g3">
+            <Field label="Workmanship warranty period" hint="Months from completion"><DecimalInput value={s.workmanshipWarrantyMonths * 100} onChange={(v) => set({ workmanshipWarrantyMonths: Math.max(0, Math.round((v ?? 1200) / 100)) })} suffix="months" /></Field>
+            <Field label="Warranty claim expenses" hint="Required: who bears reasonable claim costs">
+              <select value={s.claimExpensesPolicy} onChange={(e) => set({ claimExpensesPolicy: e.target.value as Settings["claimExpensesPolicy"] })}>
+                <option value="">Not chosen yet</option>
+                <option value="business">{s.businessName || "Business"} bears reasonable claim expenses (reimbursed on request)</option>
+                <option value="customer">Customer bears their own claim expenses</option>
+              </select>
+            </Field>
+            <div />
+            <Field label="Manufacturer equipment warranty" className="span-all" hint="Do not state warranty periods you have not confirmed with the manufacturer or supplier">
+              <textarea rows={2} {...text("manufacturerWarrantyText")} placeholder="e.g. Equipment is covered by the applicable manufacturer's warranty. Details are available on request." /></Field>
+            <Field label="Warranty information (customer-facing)" className="span-all"
+              hint={<>Must include the prescribed Australian Consumer Law notice for goods and services.{" "}
+                <button type="button" className="btn ghost sm" style={{ padding: 0, height: "auto" }} onClick={() => {
+                  if (s.warrantyText.trim() && !window.confirm("Replace the current warranty text with the recommended template built from these settings?")) return;
+                  set({ warrantyText: buildWarrantyText(s) });
+                }}>Build from template</button></>}>
+              <textarea rows={12} {...text("warrantyText")} /></Field>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-head"><h2>Scope of works templates</h2><span className="muted small">Inserted into quotations on request — editable per quote</span></div>
+          <div className="card-body grid g3">
+            <Field label={SCOPE_TEMPLATE_LABELS.cctv}><textarea rows={12} {...text("scopeTemplateCctv")} /></Field>
+            <Field label={SCOPE_TEMPLATE_LABELS.alarm} hint="Starting draft — review the wording"><textarea rows={12} {...text("scopeTemplateAlarm")} /></Field>
+            <Field label={SCOPE_TEMPLATE_LABELS.maintenance} hint="Starting draft — review the wording"><textarea rows={12} {...text("scopeTemplateMaintenance")} /></Field>
+            <div className="span-all muted small">A first line starting with &quot;Scope of Works&quot; becomes the section heading on the quotation.</div>
           </div>
         </div>
 
@@ -115,5 +152,16 @@ export function SettingsPage() {
         <div className="row" style={{ justifyContent: "flex-end" }}><button className="btn primary" disabled={!dirty} onClick={save}>Save settings</button></div>
       </div>
     </>
+  );
+}
+
+function SettingsWarnings({ s }: { s: Settings }) {
+  const warnings = settingsWarnings(s);
+  if (!warnings.length) return <div className="notice ok">Business and warranty details are complete.</div>;
+  return (
+    <div className="notice warn">
+      <strong>Missing or placeholder information</strong> — fix before issuing quotations:
+      <ul>{warnings.map((w) => <li key={w}>{w}</li>)}</ul>
+    </div>
   );
 }
