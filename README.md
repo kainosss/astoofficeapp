@@ -36,6 +36,8 @@ For front-end work with hot reload, run `npx wrangler dev` in one terminal and `
 | `npm run db:seed:local` | Load seed data (fictional customers, confirmed ASTO prices) |
 | `npm run db:reset:local` | Wipe and rebuild the local database |
 | `npm run backup:local` | Write a local D1 SQL dump + git bundle to `./backups` |
+| `npm run deploy:check` | Validate the production configuration (local, contacts nothing) |
+| `npm run db:migrate:prod` / `npm run deploy` / `npm run backup:prod` | Production operations — see DEPLOYMENT.md (need approval and Cloudflare credentials) |
 
 ## Project layout
 
@@ -71,21 +73,18 @@ Previews and PDFs are built only from a whitelisted `CustomerQuote` object (`get
 
 ## Security
 
-- **Production authentication**: Cloudflare Access in front of `office.astosec.com`, **and** the Worker verifies every API request's Access JWT (`Cf-Access-Jwt-Assertion` header or `CF_Authorization` cookie) with `jose`: RS256 signature against the team's JWKS (`/cdn-cgi/access/certs`), issuer = team domain, audience = Access application AUD tag, expiry, and an explicit **admin email allowlist** (`ADMIN_EMAILS`). Unverified headers such as `Cf-Access-Authenticated-User-Email` are never trusted.
+- **Production authentication**: Cloudflare Access in front of `office.astosec.com`, **and** the Worker verifies every API request's Access JWT (`Cf-Access-Jwt-Assertion` header or `CF_Authorization` cookie) with `jose`: RS256 signature against the team's JWKS (`/cdn-cgi/access/certs`), issuer = team domain, audience = Access application AUD tag, expiry, and an explicit **admin email allowlist** (`ADMIN_EMAILS`). Unverified headers such as `Cf-Access-Authenticated-User-Email` are never trusted. `test/production.test.ts` runs every API route with production settings to prove this.
 - **Fails closed**: missing/placeholder Access settings, an empty allowlist or an unknown `AUTH_MODE` → HTTP 500 with no data.
 - **Development bypass** (`AUTH_MODE=dev-bypass`) is refused whenever `ENVIRONMENT=production`, and only works for requests to `localhost`/`127.0.0.1` — even if the dev configuration were deployed by mistake.
 - Strict security headers (CSP, `X-Frame-Options`, `nosniff`, HSTS, `Referrer-Policy`, `Permissions-Policy`), `Cache-Control: no-store` on API responses, cross-origin write rejection, zod validation with numeric bounds, parameterised SQL, CSV formula-injection neutralisation, `noindex` robots.
 
-## Deployment checklist (requires approval — nothing has been deployed)
+## Deployment
 
-1. `npx wrangler d1 create asto-office-db-prod`, then put its id in `wrangler.jsonc` → `env.production.d1_databases`.
-2. In Cloudflare Zero Trust, create a **self-hosted Access application** for `office.astosec.com` with a policy allowing only your email(s). Copy the team domain and **AUD tag** into `env.production.vars` (`ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`) and set `ADMIN_EMAILS`.
-3. `npx wrangler d1 migrations apply asto-office-db-prod --remote --env production`
-4. `npm run build && npx wrangler deploy --env production` (adds the `office.astosec.com` custom domain; does not touch `astosec.com`).
-5. Enter real business details and terms in Settings. Do **not** load the development seed into production.
-6. Confirm an unauthenticated request to `https://office.astosec.com/api/me` is blocked.
-
-Production backups: `npx wrangler d1 export asto-office-db-prod --remote --env production --output backup.sql`, plus D1 Time Travel, plus the in-app JSON export.
+See **[DEPLOYMENT.md](DEPLOYMENT.md)** for costs, the Cloudflare Access set-up and the step-by-step checklist. In short:
+`npm run deploy:check` validates the production config, `npm run db:migrate:prod` creates the (empty) production schema,
+and `npm run deploy` runs the checks, tests and build before `wrangler deploy --env production`.
+Access settings (`ACCESS_TEAM_DOMAIN`, `ACCESS_AUD`, `ADMIN_EMAILS`) are Worker **secrets**, never committed.
+`*.workers.dev` and preview URLs are disabled. Nothing has been deployed yet.
 
 ## Not in this MVP (designed for later)
 

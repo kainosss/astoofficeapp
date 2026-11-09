@@ -30,7 +30,7 @@ function toItem(r: ItemRow): QuoteItem {
     id: r.id, sortOrder: r.sortOrder, role: r.role, kind: r.kind, equipmentId: r.equipmentId, name: r.name,
     description: r.description, sku: r.sku, supplier: r.supplier, unit: r.unit, quantityCenti: r.quantityCenti,
     packQuantity: r.packQuantity, costExGstCents: r.costExGstCents, costIncGstCents: r.costIncGstCents, markupBp: r.markupBp,
-    sellUnitCents: r.sellUnitCents, inPackage: r.inPackage, isEstimate: r.isEstimate,
+    sellUnitCents: r.sellUnitCents, inPackage: r.inPackage, isEstimate: r.isEstimate, showQuantity: r.showQuantity,
   };
 }
 
@@ -42,13 +42,16 @@ function itemValues(revisionId: number, items: QuoteItem[]) {
     costExGstCents: i.role === "included" ? 0 : i.costExGstCents,
     costIncGstCents: i.role === "included" ? 0 : i.costIncGstCents,
     markupBp: i.markupBp, sellUnitCents: i.sellUnitCents, inPackage: i.role === "included" ? true : i.inPackage, isEstimate: i.isEstimate,
+    showQuantity: i.showQuantity ?? true,
   }));
 }
 
 async function insertItems(db: Db, revisionId: number, items: QuoteItem[]) {
   const values = itemValues(revisionId, items);
-  // D1 limits bound parameters per statement; insert in modest chunks.
-  for (let i = 0; i < values.length; i += 5) await db.insert(schema.quoteItems).values(values.slice(i, i + 5));
+  // D1 allows at most 100 bound parameters per statement: keep rows × columns under that.
+  const columns = Object.keys(values[0] ?? {}).length || 1;
+  const chunk = Math.max(1, Math.floor(100 / columns));
+  for (let i = 0; i < values.length; i += chunk) await db.insert(schema.quoteItems).values(values.slice(i, i + chunk));
 }
 
 async function nextQuoteNumber(db: Db): Promise<string> {
@@ -127,7 +130,8 @@ export async function initialContent(db: Db, packageId: number | null): Promise<
     packageId: pkg?.id ?? null,
     pricing: pricingFrom(settings, pkg),
     items,
-    scope: pkg?.scope ?? "",
+    // Package wording first; otherwise the CCTV template for package-based quotes (editable per quote).
+    scope: pkg?.scope?.trim() ? pkg.scope : pkg ? settings.scopeTemplateCctv : "",
     inclusions: pkg?.inclusions || settings.standardInclusions,
     exclusions: pkg?.exclusions || settings.standardExclusions,
     depositTerms: settings.depositTerms,
@@ -348,6 +352,7 @@ export async function getCustomerQuote(db: Db, quoteId: number, revisionId?: num
     issueDate,
     expiryDate,
     isDraft: rev.status === "draft",
+    status: rev.status,
     customer: { ...snapshot.customer },
     site: snapshot.site ? { ...snapshot.site } : null,
     packageName: rev.packageName,
@@ -357,6 +362,7 @@ export async function getCustomerQuote(db: Db, quoteId: number, revisionId?: num
       unit: i.unit,
       included: i.role === "included",
       extra: mode === "fixed" && i.role === "priced" && !i.inPackage,
+      showQuantity: i.showQuantity,
     })),
     priceLines: customerPriceLines(totals, mode, rev.packageName),
     netCents: totals.netCents,

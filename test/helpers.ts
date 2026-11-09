@@ -50,8 +50,22 @@ export async function pdfText(buffer: ArrayBuffer): Promise<string> {
   return parts.join("\n");
 }
 
-/** pdf-lib writes standard-font text as hex strings; search both raw and hex encodings. */
+const WIN_ANSI: Record<number, string> = { 0x91: "\u2018", 0x92: "\u2019", 0x93: "\u201c", 0x94: "\u201d", 0x95: "\u2022", 0x96: "\u2013", 0x97: "\u2014" };
+
+/** Decode the hex-encoded text runs (`<…> Tj`) into plain text, one run per line, joined by spaces. */
+export function pdfPlain(pdf: string): string {
+  const runs: string[] = [];
+  for (const m of pdf.matchAll(/<([0-9A-Fa-f]+)>\s*Tj/g)) {
+    const hex = m[1];
+    let out = "";
+    for (let i = 0; i < hex.length; i += 2) { const b = parseInt(hex.slice(i, i + 2), 16); out += WIN_ANSI[b] ?? String.fromCharCode(b); }
+    runs.push(out);
+  }
+  return runs.join(" ").replace(/\s+/g, " ");
+}
+
+/** Search PDF text: raw, hex-encoded, or across wrapped lines (whitespace-normalised). */
 export function textContains(pdf: string, text: string): boolean {
   const hex = Array.from(text).map((c) => c.charCodeAt(0).toString(16).padStart(2, "0").toUpperCase()).join("");
-  return pdf.includes(text) || pdf.toUpperCase().includes(hex);
+  return pdf.includes(text) || pdf.toUpperCase().includes(hex) || pdfPlain(pdf).includes(text.replace(/\s+/g, " "));
 }

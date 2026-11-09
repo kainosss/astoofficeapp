@@ -2,7 +2,7 @@
   "name": "asto-office",
   "private": true,
   "version": "0.1.0",
-  "description": "ASTO Office — private business management and quotation application for ASTO SECURITY",
+  "description": "ASTO Office \u2014 private business management and quotation application for ASTO SECURITY",
   "type": "module",
   "scripts": {
     "dev": "npm run build:client && wrangler dev --port 8787",
@@ -15,7 +15,11 @@
     "db:migrate:local": "wrangler d1 migrations apply asto-office-db --local",
     "db:seed:local": "tsx scripts/gen-seed.ts > .wrangler/seed.sql && wrangler d1 execute asto-office-db --local --file .wrangler/seed.sql",
     "db:reset:local": "rm -rf .wrangler/state && npm run db:migrate:local && npm run db:seed:local",
-    "backup:local": "bash scripts/backup-local.sh"
+    "backup:local": "bash scripts/backup-local.sh",
+    "deploy:check": "node scripts/check-production-config.mjs",
+    "deploy": "npm run deploy:check && npm test && npm run build && wrangler deploy --env production",
+    "db:migrate:prod": "wrangler d1 migrations apply asto-office-prod --env production --remote",
+    "backup:prod": "mkdir -p backups && wrangler d1 export asto-office-prod --env production --remote --output backups/asto-office-prod-$(date -u +%Y%m%d-%H%M%S).sql"
   },
   "dependencies": {
     "@hono/zod-validator": "^0.9.1",

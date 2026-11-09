@@ -6,7 +6,7 @@ import { Field, Icon, Loading, Modal, MoneyInput, PageHeader, PercentInput, useL
 
 type EqInput = Omit<Eq, "id" | "updatedAt">;
 const blank: EqInput = {
-  manufacturer: "", name: "", supplier: "Tradezone", sku: "", category: "Cameras", kind: "equipment", unit: "each", packQuantity: 1,
+  manufacturer: "", name: "", supplier: "", sku: "", category: "Cameras", kind: "equipment", unit: "each", packQuantity: 1,
   costExGstCents: 0, costIncGstCents: 0, markupBp: null, sellPriceCents: null, customerDescription: "", notes: "", isEstimate: true, active: true,
 };
 

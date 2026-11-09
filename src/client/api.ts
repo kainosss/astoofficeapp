@@ -7,9 +7,16 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   const res = await fetch(`/api${path}`, {
     method,
     credentials: "same-origin",
+    // When the Cloudflare Access session expires, Access answers with a redirect to its login page.
+    // Don't follow it inside fetch (it would fail as a cross-origin request); reload to sign in again.
+    redirect: "manual",
     headers: body !== undefined ? { "content-type": "application/json" } : undefined,
     body: body !== undefined ? JSON.stringify(body) : undefined,
   });
+  if (res.type === "opaqueredirect" || res.status === 0) {
+    window.location.reload();
+    throw new ApiError(401, "Your session has expired. Reloading to sign in again…");
+  }
   const type = res.headers.get("content-type") || "";
   const data = (type.includes("application/json") ? await res.json() : null) as any;
   if (!res.ok) throw new ApiError(res.status, (data && data.error) || `Request failed (${res.status})`, data?.details);

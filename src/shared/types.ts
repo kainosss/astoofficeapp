@@ -1,5 +1,6 @@
 /** API data shapes shared by the Worker and the React client. Money = integer cents. */
 import type { ItemKind, ItemRole, PricingInputs, PricingMode, PricingResult, PriceLine } from "./pricing";
+import type { ClaimExpensesPolicy } from "./terms";
 
 export type QuoteStatus = "draft" | "sent" | "accepted" | "declined" | "expired";
 export const QUOTE_STATUSES: QuoteStatus[] = ["draft", "sent", "accepted", "declined", "expired"];
@@ -28,6 +29,12 @@ export interface Settings {
   acceptanceText: string;
   standardInclusions: string;
   standardExclusions: string;
+  scopeTemplateCctv: string;
+  scopeTemplateAlarm: string;
+  scopeTemplateMaintenance: string;
+  workmanshipWarrantyMonths: number;
+  manufacturerWarrantyText: string;
+  claimExpensesPolicy: ClaimExpensesPolicy;
   updatedAt?: string;
 }
 
@@ -128,6 +135,8 @@ export interface QuoteItem {
   sellUnitCents: number | null;
   inPackage: boolean;
   isEstimate: boolean;
+  /** Show the quantity on the customer quotation; false shows "Included" (e.g. cabling, consumables). */
+  showQuantity: boolean;
 }
 
 /** Stored pricing inputs for a revision (everything except line items). */
@@ -221,10 +230,11 @@ export interface CustomerQuote {
   issueDate: string;
   expiryDate: string;
   isDraft: boolean;
+  status: QuoteStatus;
   customer: { name: string; contactPerson: string; email: string; phone: string };
   site: { address: string; suburb: string; state: string; postcode: string } | null;
   packageName: string;
-  lines: { description: string; quantity: string; unit: string; included: boolean; extra: boolean }[];
+  lines: { description: string; quantity: string; unit: string; included: boolean; extra: boolean; showQuantity: boolean }[];
   priceLines: PriceLine[];
   netCents: number;
   gstCents: number;
